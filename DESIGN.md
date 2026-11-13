@@ -119,10 +119,12 @@ MapLibre GL style spec v8, self-contained, `sources.terrain.url =
 `styles/` (verify what the Portolan browser and MapLibre accept for pmtiles
 raster-dem; absolute public URLs are the fallback). `color-relief` layer type
 requires MapLibre GL JS ≥ v5.6 — verify current syntax against MapLibre docs
-before writing. Google's 11-color EE palette (`fadd67 b8b257 7ca88f 4aa4ca
-3869d1 6f5bc8 b862b0 bc3a6b cb3438 f08429 fbd227`) is **cyclic** (mod 100 m)
-and suits the overview COG render; for color-relief styles use a conventional
-absolute hypsometric ramp and credit the choice in the style `description`.
+before writing. Two distinct Google palettes exist: the EE catalog entry's
+`gee:visualizations` carries an 11-color ramp (`fadd67 … fbd227`, min 20 /
+max 100), and the EE example script (`docs/research/gem15-example.js`) uses a
+268-step **cyclic** ramp applied mod 100 m with hillshade — the overview COG
+reproduces the latter. For color-relief styles use a conventional absolute
+hypsometric ramp and credit the choice in the style `description`.
 
 ## Overview COG
 

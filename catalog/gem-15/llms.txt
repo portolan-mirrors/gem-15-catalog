@@ -1,0 +1,48 @@
+# GEM-15: Surface and Terrain Elevation at 15 m
+
+> Google Research's experimental near-global 15 m elevation dataset, from
+> sub-meter optical stereo imagery: a Digital Surface Model (5 bands) and a
+> co-registered bare-earth Digital Terrain Model (1 band). This is a Portolan
+> metadata mirror. The elevation COGs stay in Google's public bucket; this
+> catalog adds an item index, an overview, terrain tiles, styles and docs.
+
+Key facts
+
+- 13,485 one-degree cells, 26,970 Cloud-Optimized GeoTIFFs, about 12.3 TB.
+- Coverage 84°N to 61°S. No Russia, China, Mongolia, Greenland or Antarctica.
+- About 2.5 % of cells are masked, in all six bands. Heights over India are
+  deliberately offset.
+- Float32, metres, nodata NaN, 15 m grid, each cell in its own local UTM zone.
+- Heights are orthometric on the **EGM96 geoid (EPSG:5773)**, not ellipsoidal
+  and not EGM2008. Convert before mixing with GLO-30, FABDEM or NASADEM.
+- DSM band order: `dsm`, `dsm_percentile_5`, `dsm_percentile_50`,
+  `dsm_percentile_95`, `dsm_std`. Band 1 is `dsm`. The COG carries no band names.
+- Height above ground is `dsm − dtm`. The DTM never exceeds the DSM at full
+  resolution.
+- DSM accuracy: 3.37 m mean debiased RMSE against airborne lidar, against 3.85 m
+  for Copernicus GLO-30. The DTM is weaker than FABDEM under closed canopy.
+- Item `datetime` is a processing timestamp (2026-09-29), not an acquisition
+  date. No per-cell acquisition date is published.
+- Google's bucket serves range requests but sends no CORS headers, so browsers
+  cannot read the COGs. Use this catalog's terrain tiles and overview instead.
+- License CC-BY-4.0. Required attribution: "This dataset is produced by Google".
+
+Key URLs
+
+- Collection: https://data.source.coop/portolan-mirrors/gem-15-catalog/gem-15/collection.json
+- Item index (STAC-GeoParquet, all 13,485 items): https://data.source.coop/portolan-mirrors/gem-15-catalog/gem-15/items.parquet
+- Global overview COG: https://data.source.coop/portolan-mirrors/gem-15-catalog/gem-15/gem-15_overview.tif
+- Terrain tiles (terrarium PMTiles, z0–z13): https://data.source.coop/portolan-mirrors/gem-15-catalog/gem-15/terrain/gem-15-dsm-terrarium.pmtiles
+- Upstream COGs and STAC: https://storage.googleapis.com/climate-and-sustainability/gem-15/
+- Earth Engine entry: https://developers.google.com/earth-engine/datasets/catalog/projects_climate-and-sustainability_assets_gem-15_v1
+- Preprint: https://doi.org/10.31223/X55N75
+
+Documentation
+
+- [AGENTS.md](AGENTS.md): cell naming, runnable DuckDB and GDAL recipes, band
+  semantics, and the quirks that produce silently wrong answers. Read this first
+  if you are writing a query.
+- [README.md](README.md): what the data is, a quick start, suggested uses,
+  limitations, accuracy tables, and the MapLibre terrain story.
+- [collection.json](collection.json): STAC 1.1 metadata, `item_assets`,
+  `renders`, and 297 `child` links into Google's STAC tree.

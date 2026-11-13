@@ -1,0 +1,2382 @@
+{
+  "type": "Collection",
+  "stac_version": "1.1.0",
+  "stac_extensions": [
+    "https://schemas.portolan-sdi.org/portolan/v0.2.0/schema.json",
+    "https://stac-extensions.github.io/file/v2.1.0/schema.json",
+    "https://stac-extensions.github.io/item-assets/v1.0.0/schema.json",
+    "https://stac-extensions.github.io/processing/v1.2.0/schema.json",
+    "https://stac-extensions.github.io/projection/v2.0.0/schema.json",
+    "https://stac-extensions.github.io/raster/v2.0.0/schema.json",
+    "https://stac-extensions.github.io/render/v2.0.0/schema.json",
+    "https://stac-extensions.github.io/scientific/v1.0.0/schema.json",
+    "https://stac-extensions.github.io/version/v1.2.0/schema.json",
+    "https://stac-extensions.github.io/web-map-links/v1.3.0/schema.json"
+  ],
+  "id": "gem-15",
+  "title": "GEM-15: Surface and Terrain Elevation at 15 m",
+  "description": "GEM-15 is Google Research's experimental near-global elevation dataset: a 15 m\nDigital Surface Model (DSM) and a matching bare-earth Digital Terrain Model (DTM),\nderived from sub-meter *optical stereo* satellite imagery rather than radar or\nlidar. It covers 13,485 one-degree cells as 26,970 Cloud-Optimized GeoTIFFs,\nabout 12.3 TB. This Portolan collection is a **metadata mirror**: the pixels stay\nin Google's public bucket and are referenced there, while the catalog adds a\nqueryable item index, a global overview, browser-ready terrain tiles, styles and\ndocumentation. Agents should start at [AGENTS.md](AGENTS.md); people should start\nat [README.md](README.md).\n\n**How it was made.** Vendor stereo pairs from Airbus and Maxar, acquired through\n2024 at 0.3\u20131.5 m native ground sample distance, are pose-refined against ALOS\nAW3D30 and reconstructed into a native 0.5 m DSM; a deep-learning model trained on\nUSGS 3DEP airborne lidar predicts a 1.0 m DTM from RGB plus the DSM. Both are\naggregated to the 15 m grid (Sect. 3.1, [paper](https://doi.org/10.31223/X55N75)).\nThree sensor tiers contribute: Pl\u00e9iades Neo at 0.30 m, acquired 2022\u20132024, supplies\n63.2 % of mapped cells; other sub-meter archive imagery (WorldView-2/3/4, GeoEye-1,\nPl\u00e9iades 1A/1B) 24.4 %; and 1.5 m SPOT-6/7, mostly boreal, desert and remote rural,\n12.4 % (Sect. 2.2).\n\n**Coverage.** 84\u00b0N to 61\u00b0S, \"covering the large majority of the ice-free land\nsurface outside Russia, China, Mongolia, and Greenland, where commercial licensing\nrestrictions preclude suitable source imagery\" (Sect. 2.1). Antarctica is outside\nthe latitude range. Roughly 2.5 % of cells inside covered tiles are masked \u2014\nwater plus a 9 m buffer, snow and ice, salt pans, low-texture surfaces, and any\ncell differing by more than 50 m from Copernicus GLO-30 \u2014 and a masked cell is\nmasked in all six bands (Sect. 3.1.2). Heights over India are deliberately offset\nto comply with the Government of India National Geospatial Policy, tapering off\nacross the border over tens of kilometres (Sect. 2.1.3).\n\n**Bands and datum.** Each cell ships a five-band DSM COG (`dsm`,\n`dsm_percentile_5`, `dsm_percentile_50`, `dsm_percentile_95`, `dsm_std`) and a\none-band DTM COG, all Float32 in metres with NaN nodata, on an exact 15 m grid in\nthe cell's local UTM zone. Heights are **orthometric, referenced to the EGM96\ngeoid** ([EPSG:5773](https://epsg.io/5773)) \u2014 not ellipsoidal. Height above ground\nis `dsm \u2212 dtm`, and the DTM is clamped to never exceed the DSM.\n\n**Accuracy.** Against airborne and drone lidar campaigns, GEM-15's mean\ntile-debiased RMSE for the DSM is **3.37 m, against 3.85 m for Copernicus GLO-30**\n(12.3 % lower), 4.35 m for AW3D30 and 4.82 m for NASADEM; on the seven benchmarks\nsurveyed after 2021 the margin widens to 3.69 m against 4.27 m (Sect. 4.1.1).\nAgainst 4,071 CORS GNSS stations it is 4.92 m against 5.80 m. GLO-30 remains\nslightly better on flat bare ground. The DTM is *not* more accurate than FABDEM\noverall (3.57 m against 3.37 m) and is markedly weaker under closed canopy, where\nits bias reaches +9.4 m (Sect. 4.2). Regional mean offsets against airborne lidar\nrun from \u22124.8 m to +1.9 m, so debias against local control where absolute\nprecision matters.\n\n**Temporal extent.** The interval published here, 2022-01-01 to 2024-12-31, is the\n*imagery acquisition era*, which is what a user searching by time wants. It is not\nwhat the two upstream records carry: Google's\n[GCS STAC collection](https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/collection.json)\nrepeats its own processing timestamp (2026-09-29) as both ends, and the\n[Earth Engine entry](https://developers.google.com/earth-engine/datasets/catalog/projects_climate-and-sustainability_assets_gem-15_v1)\nreports a single 2025-01-01 snapshot instant. The paper states imagery acquired\nthrough 2024, with the dominant Pl\u00e9iades Neo tier acquired 2022\u20132024; the 36.8 %\nof cells built from older archive imagery predate this interval, and no per-cell\nacquisition-date layer is published.\n\n**What this mirror adds.** `items.parquet` is a STAC-GeoParquet index of all\n13,485 items, so one range request replaces 13,485 JSON fetches. A global overview\nCOG shows the mosaic without touching any item. Terrarium-encoded raster\n[PMTiles](https://docs.protomaps.com/pmtiles/) make the DSM usable as a MapLibre\n`raster-dem` source for hillshade, color relief and 3D terrain, with three MapLibre\nstyles alongside. These derived layers exist for a concrete reason: the GEM-15 COGs\nare served from Google's bucket, which honours HTTP range requests but sends **no\nCORS headers** (verified 2026-11-13), so a browser cannot read them directly.\nServer-side and desktop clients read the COGs fine over `/vsicurl/`; browser apps\nuse the layers this catalog hosts.\n\nLicensed [CC-BY-4.0](https://creativecommons.org/licenses/by/4.0/) and requires the\nattribution \"This dataset is produced by Google\". The dataset is experimental and\nthe preprint is under review.",
+  "version": "1.0",
+  "experimental": true,
+  "keywords": [
+    "elevation",
+    "DEM",
+    "DSM",
+    "DTM",
+    "terrain",
+    "topography",
+    "canopy height",
+    "building height",
+    "stereo",
+    "photogrammetry",
+    "Google Research",
+    "GEM-15"
+  ],
+  "license": "CC-BY-4.0",
+  "providers": [
+    {
+      "name": "Google Research",
+      "description": "Produced GEM-15 from commercial Airbus and Maxar optical stereo imagery and publishes the COGs and source STAC.",
+      "roles": [
+        "producer",
+        "processor",
+        "licensor"
+      ],
+      "url": "https://research.google/"
+    },
+    {
+      "name": "Portolan Mirrors",
+      "description": "Maintains this Portolan mirror: the item index, overview, terrain tiles, styles and documentation.",
+      "roles": [
+        "host"
+      ],
+      "url": "https://github.com/portolan-mirrors/gem-15-catalog"
+    }
+  ],
+  "extent": {
+    "spatial": {
+      "bbox": [
+        [
+          -179.0,
+          -61.0,
+          180.0,
+          84.0
+        ]
+      ]
+    },
+    "temporal": {
+      "interval": [
+        [
+          "2022-01-01T00:00:00Z",
+          "2024-12-31T23:59:59Z"
+        ]
+      ]
+    }
+  },
+  "summaries": {
+    "gsd": [
+      15.0
+    ],
+    "proj:code": [
+      "EPSG:32601",
+      "EPSG:32602",
+      "EPSG:32603",
+      "EPSG:32604",
+      "EPSG:32605",
+      "EPSG:32606",
+      "EPSG:32607",
+      "EPSG:32608",
+      "EPSG:32609",
+      "EPSG:32610",
+      "EPSG:32611",
+      "EPSG:32612",
+      "EPSG:32613",
+      "EPSG:32614",
+      "EPSG:32615",
+      "EPSG:32616",
+      "EPSG:32617",
+      "EPSG:32618",
+      "EPSG:32619",
+      "EPSG:32620",
+      "EPSG:32621",
+      "EPSG:32622",
+      "EPSG:32625",
+      "EPSG:32626",
+      "EPSG:32627",
+      "EPSG:32628",
+      "EPSG:32629",
+      "EPSG:32630",
+      "EPSG:32631",
+      "EPSG:32632",
+      "EPSG:32633",
+      "EPSG:32634",
+      "EPSG:32635",
+      "EPSG:32636",
+      "EPSG:32637",
+      "EPSG:32638",
+      "EPSG:32639",
+      "EPSG:32640",
+      "EPSG:32641",
+      "EPSG:32642",
+      "EPSG:32643",
+      "EPSG:32644",
+      "EPSG:32645",
+      "EPSG:32646",
+      "EPSG:32647",
+      "EPSG:32648",
+      "EPSG:32649",
+      "EPSG:32650",
+      "EPSG:32651",
+      "EPSG:32652",
+      "EPSG:32653",
+      "EPSG:32654",
+      "EPSG:32655",
+      "EPSG:32656",
+      "EPSG:32657",
+      "EPSG:32658",
+      "EPSG:32659",
+      "EPSG:32660",
+      "EPSG:32701",
+      "EPSG:32702",
+      "EPSG:32703",
+      "EPSG:32704",
+      "EPSG:32705",
+      "EPSG:32706",
+      "EPSG:32707",
+      "EPSG:32708",
+      "EPSG:32709",
+      "EPSG:32710",
+      "EPSG:32712",
+      "EPSG:32713",
+      "EPSG:32715",
+      "EPSG:32716",
+      "EPSG:32717",
+      "EPSG:32718",
+      "EPSG:32719",
+      "EPSG:32720",
+      "EPSG:32721",
+      "EPSG:32722",
+      "EPSG:32723",
+      "EPSG:32724",
+      "EPSG:32725",
+      "EPSG:32726",
+      "EPSG:32728",
+      "EPSG:32729",
+      "EPSG:32730",
+      "EPSG:32731",
+      "EPSG:32732",
+      "EPSG:32733",
+      "EPSG:32734",
+      "EPSG:32735",
+      "EPSG:32736",
+      "EPSG:32737",
+      "EPSG:32738",
+      "EPSG:32739",
+      "EPSG:32740",
+      "EPSG:32741",
+      "EPSG:32742",
+      "EPSG:32743",
+      "EPSG:32747",
+      "EPSG:32748",
+      "EPSG:32749",
+      "EPSG:32750",
+      "EPSG:32751",
+      "EPSG:32752",
+      "EPSG:32753",
+      "EPSG:32754",
+      "EPSG:32755",
+      "EPSG:32756",
+      "EPSG:32757",
+      "EPSG:32758",
+      "EPSG:32759",
+      "EPSG:32760"
+    ],
+    "platform": [
+      "pleiades-neo",
+      "worldview-2",
+      "worldview-3",
+      "worldview-4",
+      "geoeye-1",
+      "pleiades-1a",
+      "pleiades-1b",
+      "spot-6",
+      "spot-7"
+    ]
+  },
+  "item_assets": {
+    "dsm": {
+      "type": "image/tiff; application=geotiff; profile=cloud-optimized",
+      "title": "Digital Surface Model (DSM), 5 bands",
+      "description": "Surface elevation at 15 m: the block mean of the native 0.5 m DSM, plus the 5th, 50th and 95th percentiles and the standard deviation of the 36 sub-cells inside each 15 m pixel. Band order is dsm, dsm_percentile_5, dsm_percentile_50, dsm_percentile_95, dsm_std.",
+      "roles": [
+        "data"
+      ],
+      "bands": [
+        {
+          "name": "dsm",
+          "description": "Top surface elevation, including buildings and canopy: the mean of the native sub-cells.",
+          "data_type": "float32",
+          "nodata": "nan",
+          "unit": "m",
+          "raster:spatial_resolution": 15.0
+        },
+        {
+          "name": "dsm_percentile_5",
+          "description": "5th percentile of the native sub-cells. Picks up ground gaps, roads, street-canyon floors and lower canopy; the noisiest band under closed rainforest canopy, where ground gaps are occluded.",
+          "data_type": "float32",
+          "nodata": "nan",
+          "unit": "m",
+          "raster:spatial_resolution": 15.0
+        },
+        {
+          "name": "dsm_percentile_50",
+          "description": "Median of the native sub-cells. Less sensitive to outliers and step edges than the mean.",
+          "data_type": "float32",
+          "nodata": "nan",
+          "unit": "m",
+          "raster:spatial_resolution": 15.0
+        },
+        {
+          "name": "dsm_percentile_95",
+          "description": "95th percentile of the native sub-cells. Picks up roof ridges, ridgelines and emergent crowns; stereo smoothing lowers it slightly against lidar.",
+          "data_type": "float32",
+          "nodata": "nan",
+          "unit": "m",
+          "raster:spatial_resolution": 15.0
+        },
+        {
+          "name": "dsm_std",
+          "description": "Standard deviation of the native sub-cells: sub-pixel roughness, which tracks canopy variability and urban structural complexity.",
+          "data_type": "float32",
+          "nodata": "nan",
+          "unit": "m",
+          "raster:spatial_resolution": 15.0
+        }
+      ]
+    },
+    "dtm": {
+      "type": "image/tiff; application=geotiff; profile=cloud-optimized",
+      "title": "Digital Terrain Model (DTM), 1 band",
+      "description": "Bare-earth elevation at 15 m: the median of the native 1.0 m DTM sub-cells, clamped to never exceed the DSM. The DTM is model-inferred, so under closed canopy it is a prediction rather than a measurement.",
+      "roles": [
+        "data"
+      ],
+      "bands": [
+        {
+          "name": "dtm",
+          "description": "Bare-earth terrain elevation, clamped to be no greater than the DSM in the same pixel.",
+          "data_type": "float32",
+          "nodata": "nan",
+          "unit": "m",
+          "raster:spatial_resolution": 15.0
+        }
+      ]
+    }
+  },
+  "assets": {
+    "geoparquet-items": {
+      "href": "./items.parquet",
+      "type": "application/vnd.apache.parquet",
+      "title": "STAC items as GeoParquet",
+      "description": "All 13,485 items as STAC-GeoParquet, spatially ordered, so one range request replaces 13,485 JSON fetches. Asset hrefs in the rows are absolute URLs into Google's bucket.",
+      "roles": [
+        "collection-mirror"
+      ],
+      "processing:lineage": "Built from Google's published item JSON, upgraded from STAC 1.0.0 to 1.1.0: raster:bands becomes bands, proj:epsg becomes proj:code."
+    },
+    "overview": {
+      "href": "./gem-15_overview.tif",
+      "type": "image/tiff; application=geotiff; profile=cloud-optimized",
+      "title": "Global DSM overview (COG)",
+      "description": "The whole DSM mosaic in one 8-bit RGB + alpha COG in Web Mercator at about 960 m, for maps and coverage checks that should not touch 13,485 items. Alpha is 0 where no cell has data, which also makes it a coverage mask. Not an elevation layer: read the item COGs for heights.",
+      "roles": [
+        "visual",
+        "overview"
+      ],
+      "proj:code": "EPSG:3857",
+      "start_datetime": "2022-01-01T00:00:00Z",
+      "end_datetime": "2024-12-31T23:59:59Z",
+      "processing:lineage": "Rendered from the DSM band's internal overviews, reprojected to EPSG:3857, coloured with the cyclic 100 m ramp and hillshade of Google's Earth Engine example script, and quantized to 8-bit RGB with an alpha band."
+    },
+    "terrain-dsm": {
+      "href": "./terrain/gem-15-dsm-terrarium.pmtiles",
+      "type": "application/vnd.pmtiles",
+      "title": "DSM as terrarium-encoded terrain tiles (global)",
+      "description": "The DSM as Mapzen terrarium-encoded raster tiles, z0\u2013z13, in one PMTiles archive. MapLibre reads this as a `raster-dem` source with `\"encoding\": \"terrarium\"`, which no Float32 COG can serve. Decode with elevation = (R * 256 + G + B / 256) \u2212 32768. Terrarium has no nodata, so masked cells and ocean encode as 0 m.",
+      "roles": [
+        "visual"
+      ],
+      "processing:lineage": "Resampled from the DSM band's internal overviews at the resolution matching each zoom, encoded to terrarium PNG tiles and packed into PMTiles."
+    },
+    "terrain-dsm-demo": {
+      "href": "./terrain/gem-15-dsm-terrarium-demo-barcelona.pmtiles",
+      "type": "application/vnd.pmtiles",
+      "title": "DSM terrain tiles, Barcelona demo (z0\u2013z14)",
+      "description": "A small single-area archive over Barcelona, built the same way as the global file but one zoom deeper, for examples and for testing a terrain client without pulling the global archive.",
+      "roles": [
+        "visual"
+      ],
+      "processing:lineage": "Same pipeline as the global terrain archive, restricted to the Barcelona area and extended to z14."
+    },
+    "style-hypsometric": {
+      "href": "./styles/hypsometric.json",
+      "type": "application/vnd.mapbox.style+json",
+      "title": "Hypsometric tint with hillshade (default)",
+      "description": "MapLibre GL style: colour-relief tint over the terrain tiles, with hillshade on top.",
+      "roles": [
+        "style",
+        "default"
+      ]
+    },
+    "style-hillshade": {
+      "href": "./styles/hillshade.json",
+      "type": "application/vnd.mapbox.style+json",
+      "title": "Neutral hillshade",
+      "description": "MapLibre GL style: hillshade only, no tint, for use as a relief underlay beneath other data.",
+      "roles": [
+        "style"
+      ]
+    },
+    "style-terrain-3d": {
+      "href": "./styles/terrain-3d.json",
+      "type": "application/vnd.mapbox.style+json",
+      "title": "3D terrain",
+      "description": "MapLibre GL style: hypsometric tint and hillshade with the terrain tiles also set as the map's `terrain` source, plus a `sky` specification, for a tilted 3D view.",
+      "roles": [
+        "style"
+      ]
+    },
+    "documentation": {
+      "href": "./llms.txt",
+      "type": "text/plain",
+      "title": "llms.txt",
+      "description": "Compact orientation file for language models.",
+      "roles": [
+        "documentation"
+      ]
+    },
+    "README": {
+      "href": "./README.md",
+      "type": "text/markdown",
+      "title": "Collection README",
+      "description": "The landing page for this collection.",
+      "roles": [
+        "metadata"
+      ]
+    },
+    "thumbnail": {
+      "href": "./thumbnail.png",
+      "type": "image/png",
+      "title": "Thumbnail",
+      "description": "An 800x533 preview over the Barcelona demo area, rendered the same way as the overview COG (cyclic 100 m palette x hillshade) at about 90 m/px.",
+      "roles": [
+        "thumbnail"
+      ],
+      "file:size": 611232,
+      "file:checksum": "1220442fe2be5f6c4a132ca85c3dd32537e888b8e80cb7c9f55147a730127cfe40fb"
+    }
+  },
+  "renders": {
+    "dsm": {
+      "title": "Surface elevation, global range (\u2212100 to 4000 m)",
+      "assets": [
+        "dsm"
+      ],
+      "bidx": [
+        1
+      ],
+      "colormap_name": "terrain",
+      "resampling": "bilinear",
+      "rescale": [
+        [
+          -100,
+          4000
+        ]
+      ],
+      "nodata": "nan",
+      "minmax_zoom": [
+        8,
+        22
+      ]
+    },
+    "dtm": {
+      "title": "Bare-earth elevation, global range (\u2212100 to 4000 m)",
+      "assets": [
+        "dtm"
+      ],
+      "bidx": [
+        1
+      ],
+      "colormap_name": "terrain",
+      "resampling": "bilinear",
+      "rescale": [
+        [
+          -100,
+          4000
+        ]
+      ],
+      "nodata": "nan",
+      "minmax_zoom": [
+        8,
+        22
+      ]
+    },
+    "dsm-local-relief": {
+      "title": "Surface relief, local area (cyclic 100 m ramp)",
+      "assets": [
+        "dsm"
+      ],
+      "bidx": [
+        1
+      ],
+      "colormap": {
+        "0": [
+          250,
+          221,
+          103,
+          255
+        ],
+        "26": [
+          184,
+          178,
+          87,
+          255
+        ],
+        "51": [
+          124,
+          168,
+          143,
+          255
+        ],
+        "77": [
+          74,
+          164,
+          202,
+          255
+        ],
+        "102": [
+          56,
+          105,
+          209,
+          255
+        ],
+        "128": [
+          111,
+          91,
+          200,
+          255
+        ],
+        "153": [
+          184,
+          98,
+          176,
+          255
+        ],
+        "179": [
+          188,
+          58,
+          107,
+          255
+        ],
+        "204": [
+          203,
+          52,
+          56,
+          255
+        ],
+        "230": [
+          240,
+          132,
+          41,
+          255
+        ],
+        "255": [
+          251,
+          210,
+          39,
+          255
+        ]
+      },
+      "resampling": "bilinear",
+      "rescale": [
+        [
+          0,
+          100
+        ]
+      ],
+      "nodata": "nan",
+      "minmax_zoom": [
+        12,
+        22
+      ],
+      "description": "Approximates the look of Google's Earth Engine example script, which colours elevation modulo 100 m and multiplies by hillshade. The render extension cannot express a modulo, so this ramp covers one 100 m window: move the rescale to a 100 m band around the local terrain. For local areas only \u2014 a single 100 m window says nothing outside it."
+    },
+    "overview": {
+      "title": "Global DSM overview, below zoom 8",
+      "assets": [
+        "overview"
+      ],
+      "bidx": [
+        1,
+        2,
+        3
+      ],
+      "resampling": "bilinear",
+      "minmax_zoom": [
+        0,
+        7
+      ]
+    }
+  },
+  "sci:doi": "10.31223/X55N75",
+  "sci:citation": "Batchu, V. V., Neumann, M., Li, T., Allen, B., Zhang, J., & Van Arsdale, C. (2026). GEM-15: Global surface and terrain elevation models (15 meters) from sub-meter optical stereo imagery. EarthArXiv [preprint]. https://eartharxiv.org/repository/view/16034/, doi:10.31223/X55N75",
+  "links": [
+    {
+      "rel": "root",
+      "href": "../catalog.json",
+      "type": "application/json"
+    },
+    {
+      "rel": "parent",
+      "href": "../catalog.json",
+      "type": "application/json"
+    },
+    {
+      "rel": "license",
+      "href": "https://creativecommons.org/licenses/by/4.0/",
+      "type": "text/html",
+      "title": "Creative Commons Attribution 4.0 International"
+    },
+    {
+      "rel": "via",
+      "href": "https://developers.google.com/earth-engine/datasets/catalog/projects_climate-and-sustainability_assets_gem-15_v1",
+      "type": "text/html",
+      "title": "GEM-15 in the Earth Engine data catalog"
+    },
+    {
+      "rel": "canonical",
+      "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/collection.json",
+      "type": "application/json",
+      "title": "Google's GEM-15 STAC collection"
+    },
+    {
+      "rel": "cite-as",
+      "href": "https://doi.org/10.31223/X55N75",
+      "type": "text/html",
+      "title": "GEM-15 preprint (EarthArXiv)"
+    },
+    {
+      "rel": "describedby",
+      "href": "./README.md",
+      "type": "text/markdown",
+      "title": "Collection README"
+    },
+    {
+      "rel": "agents",
+      "href": "./AGENTS.md",
+      "type": "text/markdown",
+      "title": "Collection agent guide"
+    },
+    {
+      "rel": "pmtiles",
+      "href": "https://data.source.coop/portolan-mirrors/gem-15-catalog/gem-15/terrain/gem-15-dsm-terrarium.pmtiles",
+      "type": "application/vnd.pmtiles",
+      "title": "DSM terrain tiles (terrarium), global",
+      "pmtiles:layers": [
+        "dsm"
+      ]
+    },
+    {
+      "rel": "pmtiles",
+      "href": "https://data.source.coop/portolan-mirrors/gem-15-catalog/gem-15/terrain/gem-15-dsm-terrarium-demo-barcelona.pmtiles",
+      "type": "application/vnd.pmtiles",
+      "title": "DSM terrain tiles (terrarium), Barcelona demo",
+      "pmtiles:layers": [
+        "dsm"
+      ]
+    },
+    {
+      "rel": "child",
+      "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/m10_m100/catalog.json",
+      "type": "application/json",
+      "title": "Cells 10\u00b0S\u20130\u00b0, 100\u00b0W\u201390\u00b0W"
+    },
+    {
+      "rel": "child",
+      "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/m10_m140/catalog.json",
+      "type": "application/json",
+      "title": "Cells 10\u00b0S\u20130\u00b0, 140\u00b0W\u2013130\u00b0W"
+    },
+    {
+      "rel": "child",
+      "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/m10_m150/catalog.json",
+      "type": "application/json",
+      "title": "Cells 10\u00b0S\u20130\u00b0, 150\u00b0W\u2013140\u00b0W"
+    },
+    {
+      "rel": "child",
+      "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/m10_m160/catalog.json",
+      "type": "application/json",
+      "title": "Cells 10\u00b0S\u20130\u00b0, 160\u00b0W\u2013150\u00b0W"
+    },
+    {
+      "rel": "child",
+      "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/m10_m170/catalog.json",
+      "type": "application/json",
+      "title": "Cells 10\u00b0S\u20130\u00b0, 170\u00b0W\u2013160\u00b0W"
+    },
+    {
+      "rel": "child",
+      "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/m10_m180/catalog.json",
+      "type": "application/json",
+      "title": "Cells 10\u00b0S\u20130\u00b0, 180\u00b0W\u2013170\u00b0W"
+    },
+    {
+      "rel": "child",
+      "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/m10_m20/catalog.json",
+      "type": "application/json",
+      "title": "Cells 10\u00b0S\u20130\u00b0, 20\u00b0W\u201310\u00b0W"
+    },
+    {
+      "rel": "child",
+      "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/m10_m40/catalog.json",
+      "type": "application/json",
+      "title": "Cells 10\u00b0S\u20130\u00b0, 40\u00b0W\u201330\u00b0W"
+    },
+    {
+      "rel": "child",
+      "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/m10_m50/catalog.json",
+      "type": "application/json",
+      "title": "Cells 10\u00b0S\u20130\u00b0, 50\u00b0W\u201340\u00b0W"
+    },
+    {
+      "rel": "child",
+      "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/m10_m60/catalog.json",
+      "type": "application/json",
+      "title": "Cells 10\u00b0S\u20130\u00b0, 60\u00b0W\u201350\u00b0W"
+    },
+    {
+      "rel": "child",
+      "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/m10_m70/catalog.json",
+      "type": "application/json",
+      "title": "Cells 10\u00b0S\u20130\u00b0, 70\u00b0W\u201360\u00b0W"
+    },
+    {
+      "rel": "child",
+      "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/m10_m80/catalog.json",
+      "type": "application/json",
+      "title": "Cells 10\u00b0S\u20130\u00b0, 80\u00b0W\u201370\u00b0W"
+    },
+    {
+      "rel": "child",
+      "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/m10_m90/catalog.json",
+      "type": "application/json",
+      "title": "Cells 10\u00b0S\u20130\u00b0, 90\u00b0W\u201380\u00b0W"
+    },
+    {
+      "rel": "child",
+      "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/m10_p0/catalog.json",
+      "type": "application/json",
+      "title": "Cells 10\u00b0S\u20130\u00b0, 0\u00b0\u201310\u00b0E"
+    },
+    {
+      "rel": "child",
+      "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/m10_p10/catalog.json",
+      "type": "application/json",
+      "title": "Cells 10\u00b0S\u20130\u00b0, 10\u00b0E\u201320\u00b0E"
+    },
+    {
+      "rel": "child",
+      "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/m10_p100/catalog.json",
+      "type": "application/json",
+      "title": "Cells 10\u00b0S\u20130\u00b0, 100\u00b0E\u2013110\u00b0E"
+    },
+    {
+      "rel": "child",
+      "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/m10_p110/catalog.json",
+      "type": "application/json",
+      "title": "Cells 10\u00b0S\u20130\u00b0, 110\u00b0E\u2013120\u00b0E"
+    },
+    {
+      "rel": "child",
+      "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/m10_p120/catalog.json",
+      "type": "application/json",
+      "title": "Cells 10\u00b0S\u20130\u00b0, 120\u00b0E\u2013130\u00b0E"
+    },
+    {
+      "rel": "child",
+      "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/m10_p130/catalog.json",
+      "type": "application/json",
+      "title": "Cells 10\u00b0S\u20130\u00b0, 130\u00b0E\u2013140\u00b0E"
+    },
+    {
+      "rel": "child",
+      "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/m10_p140/catalog.json",
+      "type": "application/json",
+      "title": "Cells 10\u00b0S\u20130\u00b0, 140\u00b0E\u2013150\u00b0E"
+    },
+    {
+      "rel": "child",
+      "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/m10_p150/catalog.json",
+      "type": "application/json",
+      "title": "Cells 10\u00b0S\u20130\u00b0, 150\u00b0E\u2013160\u00b0E"
+    },
+    {
+      "rel": "child",
+      "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/m10_p160/catalog.json",
+      "type": "application/json",
+      "title": "Cells 10\u00b0S\u20130\u00b0, 160\u00b0E\u2013170\u00b0E"
+    },
+    {
+      "rel": "child",
+      "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/m10_p170/catalog.json",
+      "type": "application/json",
+      "title": "Cells 10\u00b0S\u20130\u00b0, 170\u00b0E\u2013180\u00b0E"
+    },
+    {
+      "rel": "child",
+      "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/m10_p20/catalog.json",
+      "type": "application/json",
+      "title": "Cells 10\u00b0S\u20130\u00b0, 20\u00b0E\u201330\u00b0E"
+    },
+    {
+      "rel": "child",
+      "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/m10_p30/catalog.json",
+      "type": "application/json",
+      "title": "Cells 10\u00b0S\u20130\u00b0, 30\u00b0E\u201340\u00b0E"
+    },
+    {
+      "rel": "child",
+      "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/m10_p40/catalog.json",
+      "type": "application/json",
+      "title": "Cells 10\u00b0S\u20130\u00b0, 40\u00b0E\u201350\u00b0E"
+    },
+    {
+      "rel": "child",
+      "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/m10_p50/catalog.json",
+      "type": "application/json",
+      "title": "Cells 10\u00b0S\u20130\u00b0, 50\u00b0E\u201360\u00b0E"
+    },
+    {
+      "rel": "child",
+      "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/m10_p70/catalog.json",
+      "type": "application/json",
+      "title": "Cells 10\u00b0S\u20130\u00b0, 70\u00b0E\u201380\u00b0E"
+    },
+    {
+      "rel": "child",
+      "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/m10_p90/catalog.json",
+      "type": "application/json",
+      "title": "Cells 10\u00b0S\u20130\u00b0, 90\u00b0E\u2013100\u00b0E"
+    },
+    {
+      "rel": "child",
+      "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/m20_m10/catalog.json",
+      "type": "application/json",
+      "title": "Cells 20\u00b0S\u201310\u00b0S, 10\u00b0W\u20130\u00b0"
+    },
+    {
+      "rel": "child",
+      "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/m20_m140/catalog.json",
+      "type": "application/json",
+      "title": "Cells 20\u00b0S\u201310\u00b0S, 140\u00b0W\u2013130\u00b0W"
+    },
+    {
+      "rel": "child",
+      "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/m20_m150/catalog.json",
+      "type": "application/json",
+      "title": "Cells 20\u00b0S\u201310\u00b0S, 150\u00b0W\u2013140\u00b0W"
+    },
+    {
+      "rel": "child",
+      "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/m20_m160/catalog.json",
+      "type": "application/json",
+      "title": "Cells 20\u00b0S\u201310\u00b0S, 160\u00b0W\u2013150\u00b0W"
+    },
+    {
+      "rel": "child",
+      "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/m20_m170/catalog.json",
+      "type": "application/json",
+      "title": "Cells 20\u00b0S\u201310\u00b0S, 170\u00b0W\u2013160\u00b0W"
+    },
+    {
+      "rel": "child",
+      "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/m20_m180/catalog.json",
+      "type": "application/json",
+      "title": "Cells 20\u00b0S\u201310\u00b0S, 180\u00b0W\u2013170\u00b0W"
+    },
+    {
+      "rel": "child",
+      "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/m20_m40/catalog.json",
+      "type": "application/json",
+      "title": "Cells 20\u00b0S\u201310\u00b0S, 40\u00b0W\u201330\u00b0W"
+    },
+    {
+      "rel": "child",
+      "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/m20_m50/catalog.json",
+      "type": "application/json",
+      "title": "Cells 20\u00b0S\u201310\u00b0S, 50\u00b0W\u201340\u00b0W"
+    },
+    {
+      "rel": "child",
+      "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/m20_m60/catalog.json",
+      "type": "application/json",
+      "title": "Cells 20\u00b0S\u201310\u00b0S, 60\u00b0W\u201350\u00b0W"
+    },
+    {
+      "rel": "child",
+      "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/m20_m70/catalog.json",
+      "type": "application/json",
+      "title": "Cells 20\u00b0S\u201310\u00b0S, 70\u00b0W\u201360\u00b0W"
+    },
+    {
+      "rel": "child",
+      "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/m20_m80/catalog.json",
+      "type": "application/json",
+      "title": "Cells 20\u00b0S\u201310\u00b0S, 80\u00b0W\u201370\u00b0W"
+    },
+    {
+      "rel": "child",
+      "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/m20_p10/catalog.json",
+      "type": "application/json",
+      "title": "Cells 20\u00b0S\u201310\u00b0S, 10\u00b0E\u201320\u00b0E"
+    },
+    {
+      "rel": "child",
+      "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/m20_p100/catalog.json",
+      "type": "application/json",
+      "title": "Cells 20\u00b0S\u201310\u00b0S, 100\u00b0E\u2013110\u00b0E"
+    },
+    {
+      "rel": "child",
+      "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/m20_p110/catalog.json",
+      "type": "application/json",
+      "title": "Cells 20\u00b0S\u201310\u00b0S, 110\u00b0E\u2013120\u00b0E"
+    },
+    {
+      "rel": "child",
+      "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/m20_p120/catalog.json",
+      "type": "application/json",
+      "title": "Cells 20\u00b0S\u201310\u00b0S, 120\u00b0E\u2013130\u00b0E"
+    },
+    {
+      "rel": "child",
+      "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/m20_p130/catalog.json",
+      "type": "application/json",
+      "title": "Cells 20\u00b0S\u201310\u00b0S, 130\u00b0E\u2013140\u00b0E"
+    },
+    {
+      "rel": "child",
+      "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/m20_p140/catalog.json",
+      "type": "application/json",
+      "title": "Cells 20\u00b0S\u201310\u00b0S, 140\u00b0E\u2013150\u00b0E"
+    },
+    {
+      "rel": "child",
+      "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/m20_p150/catalog.json",
+      "type": "application/json",
+      "title": "Cells 20\u00b0S\u201310\u00b0S, 150\u00b0E\u2013160\u00b0E"
+    },
+    {
+      "rel": "child",
+      "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/m20_p160/catalog.json",
+      "type": "application/json",
+      "title": "Cells 20\u00b0S\u201310\u00b0S, 160\u00b0E\u2013170\u00b0E"
+    },
+    {
+      "rel": "child",
+      "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/m20_p170/catalog.json",
+      "type": "application/json",
+      "title": "Cells 20\u00b0S\u201310\u00b0S, 170\u00b0E\u2013180\u00b0E"
+    },
+    {
+      "rel": "child",
+      "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/m20_p20/catalog.json",
+      "type": "application/json",
+      "title": "Cells 20\u00b0S\u201310\u00b0S, 20\u00b0E\u201330\u00b0E"
+    },
+    {
+      "rel": "child",
+      "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/m20_p30/catalog.json",
+      "type": "application/json",
+      "title": "Cells 20\u00b0S\u201310\u00b0S, 30\u00b0E\u201340\u00b0E"
+    },
+    {
+      "rel": "child",
+      "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/m20_p40/catalog.json",
+      "type": "application/json",
+      "title": "Cells 20\u00b0S\u201310\u00b0S, 40\u00b0E\u201350\u00b0E"
+    },
+    {
+      "rel": "child",
+      "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/m20_p50/catalog.json",
+      "type": "application/json",
+      "title": "Cells 20\u00b0S\u201310\u00b0S, 50\u00b0E\u201360\u00b0E"
+    },
+    {
+      "rel": "child",
+      "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/m20_p60/catalog.json",
+      "type": "application/json",
+      "title": "Cells 20\u00b0S\u201310\u00b0S, 60\u00b0E\u201370\u00b0E"
+    },
+    {
+      "rel": "child",
+      "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/m20_p90/catalog.json",
+      "type": "application/json",
+      "title": "Cells 20\u00b0S\u201310\u00b0S, 90\u00b0E\u2013100\u00b0E"
+    },
+    {
+      "rel": "child",
+      "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/m30_m110/catalog.json",
+      "type": "application/json",
+      "title": "Cells 30\u00b0S\u201320\u00b0S, 110\u00b0W\u2013100\u00b0W"
+    },
+    {
+      "rel": "child",
+      "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/m30_m130/catalog.json",
+      "type": "application/json",
+      "title": "Cells 30\u00b0S\u201320\u00b0S, 130\u00b0W\u2013120\u00b0W"
+    },
+    {
+      "rel": "child",
+      "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/m30_m140/catalog.json",
+      "type": "application/json",
+      "title": "Cells 30\u00b0S\u201320\u00b0S, 140\u00b0W\u2013130\u00b0W"
+    },
+    {
+      "rel": "child",
+      "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/m30_m150/catalog.json",
+      "type": "application/json",
+      "title": "Cells 30\u00b0S\u201320\u00b0S, 150\u00b0W\u2013140\u00b0W"
+    },
+    {
+      "rel": "child",
+      "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/m30_m160/catalog.json",
+      "type": "application/json",
+      "title": "Cells 30\u00b0S\u201320\u00b0S, 160\u00b0W\u2013150\u00b0W"
+    },
+    {
+      "rel": "child",
+      "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/m30_m180/catalog.json",
+      "type": "application/json",
+      "title": "Cells 30\u00b0S\u201320\u00b0S, 180\u00b0W\u2013170\u00b0W"
+    },
+    {
+      "rel": "child",
+      "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/m30_m30/catalog.json",
+      "type": "application/json",
+      "title": "Cells 30\u00b0S\u201320\u00b0S, 30\u00b0W\u201320\u00b0W"
+    },
+    {
+      "rel": "child",
+      "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/m30_m50/catalog.json",
+      "type": "application/json",
+      "title": "Cells 30\u00b0S\u201320\u00b0S, 50\u00b0W\u201340\u00b0W"
+    },
+    {
+      "rel": "child",
+      "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/m30_m60/catalog.json",
+      "type": "application/json",
+      "title": "Cells 30\u00b0S\u201320\u00b0S, 60\u00b0W\u201350\u00b0W"
+    },
+    {
+      "rel": "child",
+      "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/m30_m70/catalog.json",
+      "type": "application/json",
+      "title": "Cells 30\u00b0S\u201320\u00b0S, 70\u00b0W\u201360\u00b0W"
+    },
+    {
+      "rel": "child",
+      "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/m30_m80/catalog.json",
+      "type": "application/json",
+      "title": "Cells 30\u00b0S\u201320\u00b0S, 80\u00b0W\u201370\u00b0W"
+    },
+    {
+      "rel": "child",
+      "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/m30_m90/catalog.json",
+      "type": "application/json",
+      "title": "Cells 30\u00b0S\u201320\u00b0S, 90\u00b0W\u201380\u00b0W"
+    },
+    {
+      "rel": "child",
+      "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/m30_p10/catalog.json",
+      "type": "application/json",
+      "title": "Cells 30\u00b0S\u201320\u00b0S, 10\u00b0E\u201320\u00b0E"
+    },
+    {
+      "rel": "child",
+      "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/m30_p110/catalog.json",
+      "type": "application/json",
+      "title": "Cells 30\u00b0S\u201320\u00b0S, 110\u00b0E\u2013120\u00b0E"
+    },
+    {
+      "rel": "child",
+      "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/m30_p120/catalog.json",
+      "type": "application/json",
+      "title": "Cells 30\u00b0S\u201320\u00b0S, 120\u00b0E\u2013130\u00b0E"
+    },
+    {
+      "rel": "child",
+      "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/m30_p130/catalog.json",
+      "type": "application/json",
+      "title": "Cells 30\u00b0S\u201320\u00b0S, 130\u00b0E\u2013140\u00b0E"
+    },
+    {
+      "rel": "child",
+      "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/m30_p140/catalog.json",
+      "type": "application/json",
+      "title": "Cells 30\u00b0S\u201320\u00b0S, 140\u00b0E\u2013150\u00b0E"
+    },
+    {
+      "rel": "child",
+      "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/m30_p150/catalog.json",
+      "type": "application/json",
+      "title": "Cells 30\u00b0S\u201320\u00b0S, 150\u00b0E\u2013160\u00b0E"
+    },
+    {
+      "rel": "child",
+      "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/m30_p160/catalog.json",
+      "type": "application/json",
+      "title": "Cells 30\u00b0S\u201320\u00b0S, 160\u00b0E\u2013170\u00b0E"
+    },
+    {
+      "rel": "child",
+      "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/m30_p20/catalog.json",
+      "type": "application/json",
+      "title": "Cells 30\u00b0S\u201320\u00b0S, 20\u00b0E\u201330\u00b0E"
+    },
+    {
+      "rel": "child",
+      "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/m30_p30/catalog.json",
+      "type": "application/json",
+      "title": "Cells 30\u00b0S\u201320\u00b0S, 30\u00b0E\u201340\u00b0E"
+    },
+    {
+      "rel": "child",
+      "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/m30_p40/catalog.json",
+      "type": "application/json",
+      "title": "Cells 30\u00b0S\u201320\u00b0S, 40\u00b0E\u201350\u00b0E"
+    },
+    {
+      "rel": "child",
+      "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/m30_p50/catalog.json",
+      "type": "application/json",
+      "title": "Cells 30\u00b0S\u201320\u00b0S, 50\u00b0E\u201360\u00b0E"
+    },
+    {
+      "rel": "child",
+      "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/m40_m20/catalog.json",
+      "type": "application/json",
+      "title": "Cells 40\u00b0S\u201330\u00b0S, 20\u00b0W\u201310\u00b0W"
+    },
+    {
+      "rel": "child",
+      "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/m40_m60/catalog.json",
+      "type": "application/json",
+      "title": "Cells 40\u00b0S\u201330\u00b0S, 60\u00b0W\u201350\u00b0W"
+    },
+    {
+      "rel": "child",
+      "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/m40_m70/catalog.json",
+      "type": "application/json",
+      "title": "Cells 40\u00b0S\u201330\u00b0S, 70\u00b0W\u201360\u00b0W"
+    },
+    {
+      "rel": "child",
+      "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/m40_m80/catalog.json",
+      "type": "application/json",
+      "title": "Cells 40\u00b0S\u201330\u00b0S, 80\u00b0W\u201370\u00b0W"
+    },
+    {
+      "rel": "child",
+      "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/m40_p10/catalog.json",
+      "type": "application/json",
+      "title": "Cells 40\u00b0S\u201330\u00b0S, 10\u00b0E\u201320\u00b0E"
+    },
+    {
+      "rel": "child",
+      "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/m40_p110/catalog.json",
+      "type": "application/json",
+      "title": "Cells 40\u00b0S\u201330\u00b0S, 110\u00b0E\u2013120\u00b0E"
+    },
+    {
+      "rel": "child",
+      "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/m40_p120/catalog.json",
+      "type": "application/json",
+      "title": "Cells 40\u00b0S\u201330\u00b0S, 120\u00b0E\u2013130\u00b0E"
+    },
+    {
+      "rel": "child",
+      "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/m40_p130/catalog.json",
+      "type": "application/json",
+      "title": "Cells 40\u00b0S\u201330\u00b0S, 130\u00b0E\u2013140\u00b0E"
+    },
+    {
+      "rel": "child",
+      "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/m40_p140/catalog.json",
+      "type": "application/json",
+      "title": "Cells 40\u00b0S\u201330\u00b0S, 140\u00b0E\u2013150\u00b0E"
+    },
+    {
+      "rel": "child",
+      "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/m40_p150/catalog.json",
+      "type": "application/json",
+      "title": "Cells 40\u00b0S\u201330\u00b0S, 150\u00b0E\u2013160\u00b0E"
+    },
+    {
+      "rel": "child",
+      "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/m40_p170/catalog.json",
+      "type": "application/json",
+      "title": "Cells 40\u00b0S\u201330\u00b0S, 170\u00b0E\u2013180\u00b0E"
+    },
+    {
+      "rel": "child",
+      "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/m40_p20/catalog.json",
+      "type": "application/json",
+      "title": "Cells 40\u00b0S\u201330\u00b0S, 20\u00b0E\u201330\u00b0E"
+    },
+    {
+      "rel": "child",
+      "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/m40_p30/catalog.json",
+      "type": "application/json",
+      "title": "Cells 40\u00b0S\u201330\u00b0S, 30\u00b0E\u201340\u00b0E"
+    },
+    {
+      "rel": "child",
+      "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/m40_p70/catalog.json",
+      "type": "application/json",
+      "title": "Cells 40\u00b0S\u201330\u00b0S, 70\u00b0E\u201380\u00b0E"
+    },
+    {
+      "rel": "child",
+      "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/m50_m10/catalog.json",
+      "type": "application/json",
+      "title": "Cells 50\u00b0S\u201340\u00b0S, 10\u00b0W\u20130\u00b0"
+    },
+    {
+      "rel": "child",
+      "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/m50_m20/catalog.json",
+      "type": "application/json",
+      "title": "Cells 50\u00b0S\u201340\u00b0S, 20\u00b0W\u201310\u00b0W"
+    },
+    {
+      "rel": "child",
+      "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/m50_m70/catalog.json",
+      "type": "application/json",
+      "title": "Cells 50\u00b0S\u201340\u00b0S, 70\u00b0W\u201360\u00b0W"
+    },
+    {
+      "rel": "child",
+      "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/m50_m80/catalog.json",
+      "type": "application/json",
+      "title": "Cells 50\u00b0S\u201340\u00b0S, 80\u00b0W\u201370\u00b0W"
+    },
+    {
+      "rel": "child",
+      "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/m50_p140/catalog.json",
+      "type": "application/json",
+      "title": "Cells 50\u00b0S\u201340\u00b0S, 140\u00b0E\u2013150\u00b0E"
+    },
+    {
+      "rel": "child",
+      "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/m50_p160/catalog.json",
+      "type": "application/json",
+      "title": "Cells 50\u00b0S\u201340\u00b0S, 160\u00b0E\u2013170\u00b0E"
+    },
+    {
+      "rel": "child",
+      "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/m50_p170/catalog.json",
+      "type": "application/json",
+      "title": "Cells 50\u00b0S\u201340\u00b0S, 170\u00b0E\u2013180\u00b0E"
+    },
+    {
+      "rel": "child",
+      "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/m50_p30/catalog.json",
+      "type": "application/json",
+      "title": "Cells 50\u00b0S\u201340\u00b0S, 30\u00b0E\u201340\u00b0E"
+    },
+    {
+      "rel": "child",
+      "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/m50_p50/catalog.json",
+      "type": "application/json",
+      "title": "Cells 50\u00b0S\u201340\u00b0S, 50\u00b0E\u201360\u00b0E"
+    },
+    {
+      "rel": "child",
+      "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/m50_p60/catalog.json",
+      "type": "application/json",
+      "title": "Cells 50\u00b0S\u201340\u00b0S, 60\u00b0E\u201370\u00b0E"
+    },
+    {
+      "rel": "child",
+      "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/m50_p70/catalog.json",
+      "type": "application/json",
+      "title": "Cells 50\u00b0S\u201340\u00b0S, 70\u00b0E\u201380\u00b0E"
+    },
+    {
+      "rel": "child",
+      "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/m60_m30/catalog.json",
+      "type": "application/json",
+      "title": "Cells 60\u00b0S\u201350\u00b0S, 30\u00b0W\u201320\u00b0W"
+    },
+    {
+      "rel": "child",
+      "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/m60_m40/catalog.json",
+      "type": "application/json",
+      "title": "Cells 60\u00b0S\u201350\u00b0S, 40\u00b0W\u201330\u00b0W"
+    },
+    {
+      "rel": "child",
+      "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/m60_m60/catalog.json",
+      "type": "application/json",
+      "title": "Cells 60\u00b0S\u201350\u00b0S, 60\u00b0W\u201350\u00b0W"
+    },
+    {
+      "rel": "child",
+      "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/m60_m70/catalog.json",
+      "type": "application/json",
+      "title": "Cells 60\u00b0S\u201350\u00b0S, 70\u00b0W\u201360\u00b0W"
+    },
+    {
+      "rel": "child",
+      "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/m60_m80/catalog.json",
+      "type": "application/json",
+      "title": "Cells 60\u00b0S\u201350\u00b0S, 80\u00b0W\u201370\u00b0W"
+    },
+    {
+      "rel": "child",
+      "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/m60_p0/catalog.json",
+      "type": "application/json",
+      "title": "Cells 60\u00b0S\u201350\u00b0S, 0\u00b0\u201310\u00b0E"
+    },
+    {
+      "rel": "child",
+      "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/m60_p150/catalog.json",
+      "type": "application/json",
+      "title": "Cells 60\u00b0S\u201350\u00b0S, 150\u00b0E\u2013160\u00b0E"
+    },
+    {
+      "rel": "child",
+      "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/m60_p160/catalog.json",
+      "type": "application/json",
+      "title": "Cells 60\u00b0S\u201350\u00b0S, 160\u00b0E\u2013170\u00b0E"
+    },
+    {
+      "rel": "child",
+      "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/m60_p70/catalog.json",
+      "type": "application/json",
+      "title": "Cells 60\u00b0S\u201350\u00b0S, 70\u00b0E\u201380\u00b0E"
+    },
+    {
+      "rel": "child",
+      "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/m70_m50/catalog.json",
+      "type": "application/json",
+      "title": "Cells 70\u00b0S\u201360\u00b0S, 50\u00b0W\u201340\u00b0W"
+    },
+    {
+      "rel": "child",
+      "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p0_m10/catalog.json",
+      "type": "application/json",
+      "title": "Cells 0\u00b0\u201310\u00b0N, 10\u00b0W\u20130\u00b0"
+    },
+    {
+      "rel": "child",
+      "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p0_m100/catalog.json",
+      "type": "application/json",
+      "title": "Cells 0\u00b0\u201310\u00b0N, 100\u00b0W\u201390\u00b0W"
+    },
+    {
+      "rel": "child",
+      "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p0_m160/catalog.json",
+      "type": "application/json",
+      "title": "Cells 0\u00b0\u201310\u00b0N, 160\u00b0W\u2013150\u00b0W"
+    },
+    {
+      "rel": "child",
+      "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p0_m170/catalog.json",
+      "type": "application/json",
+      "title": "Cells 0\u00b0\u201310\u00b0N, 170\u00b0W\u2013160\u00b0W"
+    },
+    {
+      "rel": "child",
+      "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p0_m180/catalog.json",
+      "type": "application/json",
+      "title": "Cells 0\u00b0\u201310\u00b0N, 180\u00b0W\u2013170\u00b0W"
+    },
+    {
+      "rel": "child",
+      "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p0_m20/catalog.json",
+      "type": "application/json",
+      "title": "Cells 0\u00b0\u201310\u00b0N, 20\u00b0W\u201310\u00b0W"
+    },
+    {
+      "rel": "child",
+      "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p0_m50/catalog.json",
+      "type": "application/json",
+      "title": "Cells 0\u00b0\u201310\u00b0N, 50\u00b0W\u201340\u00b0W"
+    },
+    {
+      "rel": "child",
+      "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p0_m60/catalog.json",
+      "type": "application/json",
+      "title": "Cells 0\u00b0\u201310\u00b0N, 60\u00b0W\u201350\u00b0W"
+    },
+    {
+      "rel": "child",
+      "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p0_m70/catalog.json",
+      "type": "application/json",
+      "title": "Cells 0\u00b0\u201310\u00b0N, 70\u00b0W\u201360\u00b0W"
+    },
+    {
+      "rel": "child",
+      "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p0_m80/catalog.json",
+      "type": "application/json",
+      "title": "Cells 0\u00b0\u201310\u00b0N, 80\u00b0W\u201370\u00b0W"
+    },
+    {
+      "rel": "child",
+      "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p0_m90/catalog.json",
+      "type": "application/json",
+      "title": "Cells 0\u00b0\u201310\u00b0N, 90\u00b0W\u201380\u00b0W"
+    },
+    {
+      "rel": "child",
+      "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p0_p0/catalog.json",
+      "type": "application/json",
+      "title": "Cells 0\u00b0\u201310\u00b0N, 0\u00b0\u201310\u00b0E"
+    },
+    {
+      "rel": "child",
+      "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p0_p10/catalog.json",
+      "type": "application/json",
+      "title": "Cells 0\u00b0\u201310\u00b0N, 10\u00b0E\u201320\u00b0E"
+    },
+    {
+      "rel": "child",
+      "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p0_p100/catalog.json",
+      "type": "application/json",
+      "title": "Cells 0\u00b0\u201310\u00b0N, 100\u00b0E\u2013110\u00b0E"
+    },
+    {
+      "rel": "child",
+      "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p0_p110/catalog.json",
+      "type": "application/json",
+      "title": "Cells 0\u00b0\u201310\u00b0N, 110\u00b0E\u2013120\u00b0E"
+    },
+    {
+      "rel": "child",
+      "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p0_p120/catalog.json",
+      "type": "application/json",
+      "title": "Cells 0\u00b0\u201310\u00b0N, 120\u00b0E\u2013130\u00b0E"
+    },
+    {
+      "rel": "child",
+      "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p0_p130/catalog.json",
+      "type": "application/json",
+      "title": "Cells 0\u00b0\u201310\u00b0N, 130\u00b0E\u2013140\u00b0E"
+    },
+    {
+      "rel": "child",
+      "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p0_p140/catalog.json",
+      "type": "application/json",
+      "title": "Cells 0\u00b0\u201310\u00b0N, 140\u00b0E\u2013150\u00b0E"
+    },
+    {
+      "rel": "child",
+      "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p0_p150/catalog.json",
+      "type": "application/json",
+      "title": "Cells 0\u00b0\u201310\u00b0N, 150\u00b0E\u2013160\u00b0E"
+    },
+    {
+      "rel": "child",
+      "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p0_p160/catalog.json",
+      "type": "application/json",
+      "title": "Cells 0\u00b0\u201310\u00b0N, 160\u00b0E\u2013170\u00b0E"
+    },
+    {
+      "rel": "child",
+      "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p0_p170/catalog.json",
+      "type": "application/json",
+      "title": "Cells 0\u00b0\u201310\u00b0N, 170\u00b0E\u2013180\u00b0E"
+    },
+    {
+      "rel": "child",
+      "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p0_p20/catalog.json",
+      "type": "application/json",
+      "title": "Cells 0\u00b0\u201310\u00b0N, 20\u00b0E\u201330\u00b0E"
+    },
+    {
+      "rel": "child",
+      "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p0_p30/catalog.json",
+      "type": "application/json",
+      "title": "Cells 0\u00b0\u201310\u00b0N, 30\u00b0E\u201340\u00b0E"
+    },
+    {
+      "rel": "child",
+      "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p0_p40/catalog.json",
+      "type": "application/json",
+      "title": "Cells 0\u00b0\u201310\u00b0N, 40\u00b0E\u201350\u00b0E"
+    },
+    {
+      "rel": "child",
+      "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p0_p50/catalog.json",
+      "type": "application/json",
+      "title": "Cells 0\u00b0\u201310\u00b0N, 50\u00b0E\u201360\u00b0E"
+    },
+    {
+      "rel": "child",
+      "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p0_p70/catalog.json",
+      "type": "application/json",
+      "title": "Cells 0\u00b0\u201310\u00b0N, 70\u00b0E\u201380\u00b0E"
+    },
+    {
+      "rel": "child",
+      "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p0_p80/catalog.json",
+      "type": "application/json",
+      "title": "Cells 0\u00b0\u201310\u00b0N, 80\u00b0E\u201390\u00b0E"
+    },
+    {
+      "rel": "child",
+      "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p0_p90/catalog.json",
+      "type": "application/json",
+      "title": "Cells 0\u00b0\u201310\u00b0N, 90\u00b0E\u2013100\u00b0E"
+    },
+    {
+      "rel": "child",
+      "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p10_m10/catalog.json",
+      "type": "application/json",
+      "title": "Cells 10\u00b0N\u201320\u00b0N, 10\u00b0W\u20130\u00b0"
+    },
+    {
+      "rel": "child",
+      "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p10_m100/catalog.json",
+      "type": "application/json",
+      "title": "Cells 10\u00b0N\u201320\u00b0N, 100\u00b0W\u201390\u00b0W"
+    },
+    {
+      "rel": "child",
+      "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p10_m110/catalog.json",
+      "type": "application/json",
+      "title": "Cells 10\u00b0N\u201320\u00b0N, 110\u00b0W\u2013100\u00b0W"
+    },
+    {
+      "rel": "child",
+      "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p10_m120/catalog.json",
+      "type": "application/json",
+      "title": "Cells 10\u00b0N\u201320\u00b0N, 120\u00b0W\u2013110\u00b0W"
+    },
+    {
+      "rel": "child",
+      "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p10_m160/catalog.json",
+      "type": "application/json",
+      "title": "Cells 10\u00b0N\u201320\u00b0N, 160\u00b0W\u2013150\u00b0W"
+    },
+    {
+      "rel": "child",
+      "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p10_m170/catalog.json",
+      "type": "application/json",
+      "title": "Cells 10\u00b0N\u201320\u00b0N, 170\u00b0W\u2013160\u00b0W"
+    },
+    {
+      "rel": "child",
+      "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p10_m20/catalog.json",
+      "type": "application/json",
+      "title": "Cells 10\u00b0N\u201320\u00b0N, 20\u00b0W\u201310\u00b0W"
+    },
+    {
+      "rel": "child",
+      "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p10_m30/catalog.json",
+      "type": "application/json",
+      "title": "Cells 10\u00b0N\u201320\u00b0N, 30\u00b0W\u201320\u00b0W"
+    },
+    {
+      "rel": "child",
+      "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p10_m60/catalog.json",
+      "type": "application/json",
+      "title": "Cells 10\u00b0N\u201320\u00b0N, 60\u00b0W\u201350\u00b0W"
+    },
+    {
+      "rel": "child",
+      "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p10_m70/catalog.json",
+      "type": "application/json",
+      "title": "Cells 10\u00b0N\u201320\u00b0N, 70\u00b0W\u201360\u00b0W"
+    },
+    {
+      "rel": "child",
+      "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p10_m80/catalog.json",
+      "type": "application/json",
+      "title": "Cells 10\u00b0N\u201320\u00b0N, 80\u00b0W\u201370\u00b0W"
+    },
+    {
+      "rel": "child",
+      "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p10_m90/catalog.json",
+      "type": "application/json",
+      "title": "Cells 10\u00b0N\u201320\u00b0N, 90\u00b0W\u201380\u00b0W"
+    },
+    {
+      "rel": "child",
+      "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p10_p0/catalog.json",
+      "type": "application/json",
+      "title": "Cells 10\u00b0N\u201320\u00b0N, 0\u00b0\u201310\u00b0E"
+    },
+    {
+      "rel": "child",
+      "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p10_p10/catalog.json",
+      "type": "application/json",
+      "title": "Cells 10\u00b0N\u201320\u00b0N, 10\u00b0E\u201320\u00b0E"
+    },
+    {
+      "rel": "child",
+      "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p10_p100/catalog.json",
+      "type": "application/json",
+      "title": "Cells 10\u00b0N\u201320\u00b0N, 100\u00b0E\u2013110\u00b0E"
+    },
+    {
+      "rel": "child",
+      "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p10_p110/catalog.json",
+      "type": "application/json",
+      "title": "Cells 10\u00b0N\u201320\u00b0N, 110\u00b0E\u2013120\u00b0E"
+    },
+    {
+      "rel": "child",
+      "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p10_p120/catalog.json",
+      "type": "application/json",
+      "title": "Cells 10\u00b0N\u201320\u00b0N, 120\u00b0E\u2013130\u00b0E"
+    },
+    {
+      "rel": "child",
+      "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p10_p140/catalog.json",
+      "type": "application/json",
+      "title": "Cells 10\u00b0N\u201320\u00b0N, 140\u00b0E\u2013150\u00b0E"
+    },
+    {
+      "rel": "child",
+      "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p10_p160/catalog.json",
+      "type": "application/json",
+      "title": "Cells 10\u00b0N\u201320\u00b0N, 160\u00b0E\u2013170\u00b0E"
+    },
+    {
+      "rel": "child",
+      "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p10_p20/catalog.json",
+      "type": "application/json",
+      "title": "Cells 10\u00b0N\u201320\u00b0N, 20\u00b0E\u201330\u00b0E"
+    },
+    {
+      "rel": "child",
+      "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p10_p30/catalog.json",
+      "type": "application/json",
+      "title": "Cells 10\u00b0N\u201320\u00b0N, 30\u00b0E\u201340\u00b0E"
+    },
+    {
+      "rel": "child",
+      "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p10_p40/catalog.json",
+      "type": "application/json",
+      "title": "Cells 10\u00b0N\u201320\u00b0N, 40\u00b0E\u201350\u00b0E"
+    },
+    {
+      "rel": "child",
+      "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p10_p50/catalog.json",
+      "type": "application/json",
+      "title": "Cells 10\u00b0N\u201320\u00b0N, 50\u00b0E\u201360\u00b0E"
+    },
+    {
+      "rel": "child",
+      "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p10_p70/catalog.json",
+      "type": "application/json",
+      "title": "Cells 10\u00b0N\u201320\u00b0N, 70\u00b0E\u201380\u00b0E"
+    },
+    {
+      "rel": "child",
+      "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p10_p80/catalog.json",
+      "type": "application/json",
+      "title": "Cells 10\u00b0N\u201320\u00b0N, 80\u00b0E\u201390\u00b0E"
+    },
+    {
+      "rel": "child",
+      "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p10_p90/catalog.json",
+      "type": "application/json",
+      "title": "Cells 10\u00b0N\u201320\u00b0N, 90\u00b0E\u2013100\u00b0E"
+    },
+    {
+      "rel": "child",
+      "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p20_m10/catalog.json",
+      "type": "application/json",
+      "title": "Cells 20\u00b0N\u201330\u00b0N, 10\u00b0W\u20130\u00b0"
+    },
+    {
+      "rel": "child",
+      "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p20_m100/catalog.json",
+      "type": "application/json",
+      "title": "Cells 20\u00b0N\u201330\u00b0N, 100\u00b0W\u201390\u00b0W"
+    },
+    {
+      "rel": "child",
+      "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p20_m110/catalog.json",
+      "type": "application/json",
+      "title": "Cells 20\u00b0N\u201330\u00b0N, 110\u00b0W\u2013100\u00b0W"
+    },
+    {
+      "rel": "child",
+      "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p20_m120/catalog.json",
+      "type": "application/json",
+      "title": "Cells 20\u00b0N\u201330\u00b0N, 120\u00b0W\u2013110\u00b0W"
+    },
+    {
+      "rel": "child",
+      "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p20_m160/catalog.json",
+      "type": "application/json",
+      "title": "Cells 20\u00b0N\u201330\u00b0N, 160\u00b0W\u2013150\u00b0W"
+    },
+    {
+      "rel": "child",
+      "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p20_m170/catalog.json",
+      "type": "application/json",
+      "title": "Cells 20\u00b0N\u201330\u00b0N, 170\u00b0W\u2013160\u00b0W"
+    },
+    {
+      "rel": "child",
+      "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p20_m20/catalog.json",
+      "type": "application/json",
+      "title": "Cells 20\u00b0N\u201330\u00b0N, 20\u00b0W\u201310\u00b0W"
+    },
+    {
+      "rel": "child",
+      "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p20_m80/catalog.json",
+      "type": "application/json",
+      "title": "Cells 20\u00b0N\u201330\u00b0N, 80\u00b0W\u201370\u00b0W"
+    },
+    {
+      "rel": "child",
+      "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p20_m90/catalog.json",
+      "type": "application/json",
+      "title": "Cells 20\u00b0N\u201330\u00b0N, 90\u00b0W\u201380\u00b0W"
+    },
+    {
+      "rel": "child",
+      "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p20_p0/catalog.json",
+      "type": "application/json",
+      "title": "Cells 20\u00b0N\u201330\u00b0N, 0\u00b0\u201310\u00b0E"
+    },
+    {
+      "rel": "child",
+      "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p20_p10/catalog.json",
+      "type": "application/json",
+      "title": "Cells 20\u00b0N\u201330\u00b0N, 10\u00b0E\u201320\u00b0E"
+    },
+    {
+      "rel": "child",
+      "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p20_p100/catalog.json",
+      "type": "application/json",
+      "title": "Cells 20\u00b0N\u201330\u00b0N, 100\u00b0E\u2013110\u00b0E"
+    },
+    {
+      "rel": "child",
+      "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p20_p110/catalog.json",
+      "type": "application/json",
+      "title": "Cells 20\u00b0N\u201330\u00b0N, 110\u00b0E\u2013120\u00b0E"
+    },
+    {
+      "rel": "child",
+      "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p20_p120/catalog.json",
+      "type": "application/json",
+      "title": "Cells 20\u00b0N\u201330\u00b0N, 120\u00b0E\u2013130\u00b0E"
+    },
+    {
+      "rel": "child",
+      "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p20_p130/catalog.json",
+      "type": "application/json",
+      "title": "Cells 20\u00b0N\u201330\u00b0N, 130\u00b0E\u2013140\u00b0E"
+    },
+    {
+      "rel": "child",
+      "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p20_p140/catalog.json",
+      "type": "application/json",
+      "title": "Cells 20\u00b0N\u201330\u00b0N, 140\u00b0E\u2013150\u00b0E"
+    },
+    {
+      "rel": "child",
+      "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p20_p150/catalog.json",
+      "type": "application/json",
+      "title": "Cells 20\u00b0N\u201330\u00b0N, 150\u00b0E\u2013160\u00b0E"
+    },
+    {
+      "rel": "child",
+      "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p20_p20/catalog.json",
+      "type": "application/json",
+      "title": "Cells 20\u00b0N\u201330\u00b0N, 20\u00b0E\u201330\u00b0E"
+    },
+    {
+      "rel": "child",
+      "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p20_p30/catalog.json",
+      "type": "application/json",
+      "title": "Cells 20\u00b0N\u201330\u00b0N, 30\u00b0E\u201340\u00b0E"
+    },
+    {
+      "rel": "child",
+      "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p20_p40/catalog.json",
+      "type": "application/json",
+      "title": "Cells 20\u00b0N\u201330\u00b0N, 40\u00b0E\u201350\u00b0E"
+    },
+    {
+      "rel": "child",
+      "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p20_p50/catalog.json",
+      "type": "application/json",
+      "title": "Cells 20\u00b0N\u201330\u00b0N, 50\u00b0E\u201360\u00b0E"
+    },
+    {
+      "rel": "child",
+      "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p20_p60/catalog.json",
+      "type": "application/json",
+      "title": "Cells 20\u00b0N\u201330\u00b0N, 60\u00b0E\u201370\u00b0E"
+    },
+    {
+      "rel": "child",
+      "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p20_p70/catalog.json",
+      "type": "application/json",
+      "title": "Cells 20\u00b0N\u201330\u00b0N, 70\u00b0E\u201380\u00b0E"
+    },
+    {
+      "rel": "child",
+      "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p20_p80/catalog.json",
+      "type": "application/json",
+      "title": "Cells 20\u00b0N\u201330\u00b0N, 80\u00b0E\u201390\u00b0E"
+    },
+    {
+      "rel": "child",
+      "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p20_p90/catalog.json",
+      "type": "application/json",
+      "title": "Cells 20\u00b0N\u201330\u00b0N, 90\u00b0E\u2013100\u00b0E"
+    },
+    {
+      "rel": "child",
+      "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p30_m10/catalog.json",
+      "type": "application/json",
+      "title": "Cells 30\u00b0N\u201340\u00b0N, 10\u00b0W\u20130\u00b0"
+    },
+    {
+      "rel": "child",
+      "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p30_m100/catalog.json",
+      "type": "application/json",
+      "title": "Cells 30\u00b0N\u201340\u00b0N, 100\u00b0W\u201390\u00b0W"
+    },
+    {
+      "rel": "child",
+      "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p30_m110/catalog.json",
+      "type": "application/json",
+      "title": "Cells 30\u00b0N\u201340\u00b0N, 110\u00b0W\u2013100\u00b0W"
+    },
+    {
+      "rel": "child",
+      "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p30_m120/catalog.json",
+      "type": "application/json",
+      "title": "Cells 30\u00b0N\u201340\u00b0N, 120\u00b0W\u2013110\u00b0W"
+    },
+    {
+      "rel": "child",
+      "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p30_m130/catalog.json",
+      "type": "application/json",
+      "title": "Cells 30\u00b0N\u201340\u00b0N, 130\u00b0W\u2013120\u00b0W"
+    },
+    {
+      "rel": "child",
+      "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p30_m20/catalog.json",
+      "type": "application/json",
+      "title": "Cells 30\u00b0N\u201340\u00b0N, 20\u00b0W\u201310\u00b0W"
+    },
+    {
+      "rel": "child",
+      "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p30_m30/catalog.json",
+      "type": "application/json",
+      "title": "Cells 30\u00b0N\u201340\u00b0N, 30\u00b0W\u201320\u00b0W"
+    },
+    {
+      "rel": "child",
+      "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p30_m40/catalog.json",
+      "type": "application/json",
+      "title": "Cells 30\u00b0N\u201340\u00b0N, 40\u00b0W\u201330\u00b0W"
+    },
+    {
+      "rel": "child",
+      "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p30_m70/catalog.json",
+      "type": "application/json",
+      "title": "Cells 30\u00b0N\u201340\u00b0N, 70\u00b0W\u201360\u00b0W"
+    },
+    {
+      "rel": "child",
+      "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p30_m80/catalog.json",
+      "type": "application/json",
+      "title": "Cells 30\u00b0N\u201340\u00b0N, 80\u00b0W\u201370\u00b0W"
+    },
+    {
+      "rel": "child",
+      "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p30_m90/catalog.json",
+      "type": "application/json",
+      "title": "Cells 30\u00b0N\u201340\u00b0N, 90\u00b0W\u201380\u00b0W"
+    },
+    {
+      "rel": "child",
+      "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p30_p0/catalog.json",
+      "type": "application/json",
+      "title": "Cells 30\u00b0N\u201340\u00b0N, 0\u00b0\u201310\u00b0E"
+    },
+    {
+      "rel": "child",
+      "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p30_p10/catalog.json",
+      "type": "application/json",
+      "title": "Cells 30\u00b0N\u201340\u00b0N, 10\u00b0E\u201320\u00b0E"
+    },
+    {
+      "rel": "child",
+      "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p30_p120/catalog.json",
+      "type": "application/json",
+      "title": "Cells 30\u00b0N\u201340\u00b0N, 120\u00b0E\u2013130\u00b0E"
+    },
+    {
+      "rel": "child",
+      "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p30_p130/catalog.json",
+      "type": "application/json",
+      "title": "Cells 30\u00b0N\u201340\u00b0N, 130\u00b0E\u2013140\u00b0E"
+    },
+    {
+      "rel": "child",
+      "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p30_p140/catalog.json",
+      "type": "application/json",
+      "title": "Cells 30\u00b0N\u201340\u00b0N, 140\u00b0E\u2013150\u00b0E"
+    },
+    {
+      "rel": "child",
+      "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p30_p20/catalog.json",
+      "type": "application/json",
+      "title": "Cells 30\u00b0N\u201340\u00b0N, 20\u00b0E\u201330\u00b0E"
+    },
+    {
+      "rel": "child",
+      "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p30_p30/catalog.json",
+      "type": "application/json",
+      "title": "Cells 30\u00b0N\u201340\u00b0N, 30\u00b0E\u201340\u00b0E"
+    },
+    {
+      "rel": "child",
+      "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p30_p40/catalog.json",
+      "type": "application/json",
+      "title": "Cells 30\u00b0N\u201340\u00b0N, 40\u00b0E\u201350\u00b0E"
+    },
+    {
+      "rel": "child",
+      "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p30_p50/catalog.json",
+      "type": "application/json",
+      "title": "Cells 30\u00b0N\u201340\u00b0N, 50\u00b0E\u201360\u00b0E"
+    },
+    {
+      "rel": "child",
+      "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p30_p60/catalog.json",
+      "type": "application/json",
+      "title": "Cells 30\u00b0N\u201340\u00b0N, 60\u00b0E\u201370\u00b0E"
+    },
+    {
+      "rel": "child",
+      "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p30_p70/catalog.json",
+      "type": "application/json",
+      "title": "Cells 30\u00b0N\u201340\u00b0N, 70\u00b0E\u201380\u00b0E"
+    },
+    {
+      "rel": "child",
+      "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p30_p80/catalog.json",
+      "type": "application/json",
+      "title": "Cells 30\u00b0N\u201340\u00b0N, 80\u00b0E\u201390\u00b0E"
+    },
+    {
+      "rel": "child",
+      "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p40_m10/catalog.json",
+      "type": "application/json",
+      "title": "Cells 40\u00b0N\u201350\u00b0N, 10\u00b0W\u20130\u00b0"
+    },
+    {
+      "rel": "child",
+      "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p40_m100/catalog.json",
+      "type": "application/json",
+      "title": "Cells 40\u00b0N\u201350\u00b0N, 100\u00b0W\u201390\u00b0W"
+    },
+    {
+      "rel": "child",
+      "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p40_m110/catalog.json",
+      "type": "application/json",
+      "title": "Cells 40\u00b0N\u201350\u00b0N, 110\u00b0W\u2013100\u00b0W"
+    },
+    {
+      "rel": "child",
+      "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p40_m120/catalog.json",
+      "type": "application/json",
+      "title": "Cells 40\u00b0N\u201350\u00b0N, 120\u00b0W\u2013110\u00b0W"
+    },
+    {
+      "rel": "child",
+      "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p40_m130/catalog.json",
+      "type": "application/json",
+      "title": "Cells 40\u00b0N\u201350\u00b0N, 130\u00b0W\u2013120\u00b0W"
+    },
+    {
+      "rel": "child",
+      "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p40_m60/catalog.json",
+      "type": "application/json",
+      "title": "Cells 40\u00b0N\u201350\u00b0N, 60\u00b0W\u201350\u00b0W"
+    },
+    {
+      "rel": "child",
+      "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p40_m70/catalog.json",
+      "type": "application/json",
+      "title": "Cells 40\u00b0N\u201350\u00b0N, 70\u00b0W\u201360\u00b0W"
+    },
+    {
+      "rel": "child",
+      "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p40_m80/catalog.json",
+      "type": "application/json",
+      "title": "Cells 40\u00b0N\u201350\u00b0N, 80\u00b0W\u201370\u00b0W"
+    },
+    {
+      "rel": "child",
+      "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p40_m90/catalog.json",
+      "type": "application/json",
+      "title": "Cells 40\u00b0N\u201350\u00b0N, 90\u00b0W\u201380\u00b0W"
+    },
+    {
+      "rel": "child",
+      "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p40_p0/catalog.json",
+      "type": "application/json",
+      "title": "Cells 40\u00b0N\u201350\u00b0N, 0\u00b0\u201310\u00b0E"
+    },
+    {
+      "rel": "child",
+      "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p40_p10/catalog.json",
+      "type": "application/json",
+      "title": "Cells 40\u00b0N\u201350\u00b0N, 10\u00b0E\u201320\u00b0E"
+    },
+    {
+      "rel": "child",
+      "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p40_p130/catalog.json",
+      "type": "application/json",
+      "title": "Cells 40\u00b0N\u201350\u00b0N, 130\u00b0E\u2013140\u00b0E"
+    },
+    {
+      "rel": "child",
+      "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p40_p140/catalog.json",
+      "type": "application/json",
+      "title": "Cells 40\u00b0N\u201350\u00b0N, 140\u00b0E\u2013150\u00b0E"
+    },
+    {
+      "rel": "child",
+      "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p40_p20/catalog.json",
+      "type": "application/json",
+      "title": "Cells 40\u00b0N\u201350\u00b0N, 20\u00b0E\u201330\u00b0E"
+    },
+    {
+      "rel": "child",
+      "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p40_p30/catalog.json",
+      "type": "application/json",
+      "title": "Cells 40\u00b0N\u201350\u00b0N, 30\u00b0E\u201340\u00b0E"
+    },
+    {
+      "rel": "child",
+      "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p40_p40/catalog.json",
+      "type": "application/json",
+      "title": "Cells 40\u00b0N\u201350\u00b0N, 40\u00b0E\u201350\u00b0E"
+    },
+    {
+      "rel": "child",
+      "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p40_p50/catalog.json",
+      "type": "application/json",
+      "title": "Cells 40\u00b0N\u201350\u00b0N, 50\u00b0E\u201360\u00b0E"
+    },
+    {
+      "rel": "child",
+      "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p40_p60/catalog.json",
+      "type": "application/json",
+      "title": "Cells 40\u00b0N\u201350\u00b0N, 60\u00b0E\u201370\u00b0E"
+    },
+    {
+      "rel": "child",
+      "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p40_p70/catalog.json",
+      "type": "application/json",
+      "title": "Cells 40\u00b0N\u201350\u00b0N, 70\u00b0E\u201380\u00b0E"
+    },
+    {
+      "rel": "child",
+      "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p40_p80/catalog.json",
+      "type": "application/json",
+      "title": "Cells 40\u00b0N\u201350\u00b0N, 80\u00b0E\u201390\u00b0E"
+    },
+    {
+      "rel": "child",
+      "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p50_m10/catalog.json",
+      "type": "application/json",
+      "title": "Cells 50\u00b0N\u201360\u00b0N, 10\u00b0W\u20130\u00b0"
+    },
+    {
+      "rel": "child",
+      "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p50_m100/catalog.json",
+      "type": "application/json",
+      "title": "Cells 50\u00b0N\u201360\u00b0N, 100\u00b0W\u201390\u00b0W"
+    },
+    {
+      "rel": "child",
+      "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p50_m110/catalog.json",
+      "type": "application/json",
+      "title": "Cells 50\u00b0N\u201360\u00b0N, 110\u00b0W\u2013100\u00b0W"
+    },
+    {
+      "rel": "child",
+      "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p50_m120/catalog.json",
+      "type": "application/json",
+      "title": "Cells 50\u00b0N\u201360\u00b0N, 120\u00b0W\u2013110\u00b0W"
+    },
+    {
+      "rel": "child",
+      "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p50_m130/catalog.json",
+      "type": "application/json",
+      "title": "Cells 50\u00b0N\u201360\u00b0N, 130\u00b0W\u2013120\u00b0W"
+    },
+    {
+      "rel": "child",
+      "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p50_m140/catalog.json",
+      "type": "application/json",
+      "title": "Cells 50\u00b0N\u201360\u00b0N, 140\u00b0W\u2013130\u00b0W"
+    },
+    {
+      "rel": "child",
+      "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p50_m150/catalog.json",
+      "type": "application/json",
+      "title": "Cells 50\u00b0N\u201360\u00b0N, 150\u00b0W\u2013140\u00b0W"
+    },
+    {
+      "rel": "child",
+      "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p50_m160/catalog.json",
+      "type": "application/json",
+      "title": "Cells 50\u00b0N\u201360\u00b0N, 160\u00b0W\u2013150\u00b0W"
+    },
+    {
+      "rel": "child",
+      "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p50_m170/catalog.json",
+      "type": "application/json",
+      "title": "Cells 50\u00b0N\u201360\u00b0N, 170\u00b0W\u2013160\u00b0W"
+    },
+    {
+      "rel": "child",
+      "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p50_m180/catalog.json",
+      "type": "application/json",
+      "title": "Cells 50\u00b0N\u201360\u00b0N, 180\u00b0W\u2013170\u00b0W"
+    },
+    {
+      "rel": "child",
+      "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p50_m20/catalog.json",
+      "type": "application/json",
+      "title": "Cells 50\u00b0N\u201360\u00b0N, 20\u00b0W\u201310\u00b0W"
+    },
+    {
+      "rel": "child",
+      "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p50_m60/catalog.json",
+      "type": "application/json",
+      "title": "Cells 50\u00b0N\u201360\u00b0N, 60\u00b0W\u201350\u00b0W"
+    },
+    {
+      "rel": "child",
+      "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p50_m70/catalog.json",
+      "type": "application/json",
+      "title": "Cells 50\u00b0N\u201360\u00b0N, 70\u00b0W\u201360\u00b0W"
+    },
+    {
+      "rel": "child",
+      "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p50_m80/catalog.json",
+      "type": "application/json",
+      "title": "Cells 50\u00b0N\u201360\u00b0N, 80\u00b0W\u201370\u00b0W"
+    },
+    {
+      "rel": "child",
+      "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p50_m90/catalog.json",
+      "type": "application/json",
+      "title": "Cells 50\u00b0N\u201360\u00b0N, 90\u00b0W\u201380\u00b0W"
+    },
+    {
+      "rel": "child",
+      "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p50_p0/catalog.json",
+      "type": "application/json",
+      "title": "Cells 50\u00b0N\u201360\u00b0N, 0\u00b0\u201310\u00b0E"
+    },
+    {
+      "rel": "child",
+      "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p50_p10/catalog.json",
+      "type": "application/json",
+      "title": "Cells 50\u00b0N\u201360\u00b0N, 10\u00b0E\u201320\u00b0E"
+    },
+    {
+      "rel": "child",
+      "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p50_p170/catalog.json",
+      "type": "application/json",
+      "title": "Cells 50\u00b0N\u201360\u00b0N, 170\u00b0E\u2013180\u00b0E"
+    },
+    {
+      "rel": "child",
+      "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p50_p20/catalog.json",
+      "type": "application/json",
+      "title": "Cells 50\u00b0N\u201360\u00b0N, 20\u00b0E\u201330\u00b0E"
+    },
+    {
+      "rel": "child",
+      "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p50_p30/catalog.json",
+      "type": "application/json",
+      "title": "Cells 50\u00b0N\u201360\u00b0N, 30\u00b0E\u201340\u00b0E"
+    },
+    {
+      "rel": "child",
+      "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p50_p40/catalog.json",
+      "type": "application/json",
+      "title": "Cells 50\u00b0N\u201360\u00b0N, 40\u00b0E\u201350\u00b0E"
+    },
+    {
+      "rel": "child",
+      "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p50_p50/catalog.json",
+      "type": "application/json",
+      "title": "Cells 50\u00b0N\u201360\u00b0N, 50\u00b0E\u201360\u00b0E"
+    },
+    {
+      "rel": "child",
+      "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p50_p60/catalog.json",
+      "type": "application/json",
+      "title": "Cells 50\u00b0N\u201360\u00b0N, 60\u00b0E\u201370\u00b0E"
+    },
+    {
+      "rel": "child",
+      "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p50_p70/catalog.json",
+      "type": "application/json",
+      "title": "Cells 50\u00b0N\u201360\u00b0N, 70\u00b0E\u201380\u00b0E"
+    },
+    {
+      "rel": "child",
+      "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p50_p80/catalog.json",
+      "type": "application/json",
+      "title": "Cells 50\u00b0N\u201360\u00b0N, 80\u00b0E\u201390\u00b0E"
+    },
+    {
+      "rel": "child",
+      "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p60_m10/catalog.json",
+      "type": "application/json",
+      "title": "Cells 60\u00b0N\u201370\u00b0N, 10\u00b0W\u20130\u00b0"
+    },
+    {
+      "rel": "child",
+      "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p60_m100/catalog.json",
+      "type": "application/json",
+      "title": "Cells 60\u00b0N\u201370\u00b0N, 100\u00b0W\u201390\u00b0W"
+    },
+    {
+      "rel": "child",
+      "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p60_m110/catalog.json",
+      "type": "application/json",
+      "title": "Cells 60\u00b0N\u201370\u00b0N, 110\u00b0W\u2013100\u00b0W"
+    },
+    {
+      "rel": "child",
+      "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p60_m120/catalog.json",
+      "type": "application/json",
+      "title": "Cells 60\u00b0N\u201370\u00b0N, 120\u00b0W\u2013110\u00b0W"
+    },
+    {
+      "rel": "child",
+      "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p60_m130/catalog.json",
+      "type": "application/json",
+      "title": "Cells 60\u00b0N\u201370\u00b0N, 130\u00b0W\u2013120\u00b0W"
+    },
+    {
+      "rel": "child",
+      "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p60_m140/catalog.json",
+      "type": "application/json",
+      "title": "Cells 60\u00b0N\u201370\u00b0N, 140\u00b0W\u2013130\u00b0W"
+    },
+    {
+      "rel": "child",
+      "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p60_m150/catalog.json",
+      "type": "application/json",
+      "title": "Cells 60\u00b0N\u201370\u00b0N, 150\u00b0W\u2013140\u00b0W"
+    },
+    {
+      "rel": "child",
+      "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p60_m160/catalog.json",
+      "type": "application/json",
+      "title": "Cells 60\u00b0N\u201370\u00b0N, 160\u00b0W\u2013150\u00b0W"
+    },
+    {
+      "rel": "child",
+      "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p60_m170/catalog.json",
+      "type": "application/json",
+      "title": "Cells 60\u00b0N\u201370\u00b0N, 170\u00b0W\u2013160\u00b0W"
+    },
+    {
+      "rel": "child",
+      "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p60_m180/catalog.json",
+      "type": "application/json",
+      "title": "Cells 60\u00b0N\u201370\u00b0N, 180\u00b0W\u2013170\u00b0W"
+    },
+    {
+      "rel": "child",
+      "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p60_m20/catalog.json",
+      "type": "application/json",
+      "title": "Cells 60\u00b0N\u201370\u00b0N, 20\u00b0W\u201310\u00b0W"
+    },
+    {
+      "rel": "child",
+      "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p60_m30/catalog.json",
+      "type": "application/json",
+      "title": "Cells 60\u00b0N\u201370\u00b0N, 30\u00b0W\u201320\u00b0W"
+    },
+    {
+      "rel": "child",
+      "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p60_m70/catalog.json",
+      "type": "application/json",
+      "title": "Cells 60\u00b0N\u201370\u00b0N, 70\u00b0W\u201360\u00b0W"
+    },
+    {
+      "rel": "child",
+      "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p60_m80/catalog.json",
+      "type": "application/json",
+      "title": "Cells 60\u00b0N\u201370\u00b0N, 80\u00b0W\u201370\u00b0W"
+    },
+    {
+      "rel": "child",
+      "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p60_m90/catalog.json",
+      "type": "application/json",
+      "title": "Cells 60\u00b0N\u201370\u00b0N, 90\u00b0W\u201380\u00b0W"
+    },
+    {
+      "rel": "child",
+      "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p60_p0/catalog.json",
+      "type": "application/json",
+      "title": "Cells 60\u00b0N\u201370\u00b0N, 0\u00b0\u201310\u00b0E"
+    },
+    {
+      "rel": "child",
+      "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p60_p10/catalog.json",
+      "type": "application/json",
+      "title": "Cells 60\u00b0N\u201370\u00b0N, 10\u00b0E\u201320\u00b0E"
+    },
+    {
+      "rel": "child",
+      "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p60_p20/catalog.json",
+      "type": "application/json",
+      "title": "Cells 60\u00b0N\u201370\u00b0N, 20\u00b0E\u201330\u00b0E"
+    },
+    {
+      "rel": "child",
+      "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p60_p30/catalog.json",
+      "type": "application/json",
+      "title": "Cells 60\u00b0N\u201370\u00b0N, 30\u00b0E\u201340\u00b0E"
+    },
+    {
+      "rel": "child",
+      "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p70_m100/catalog.json",
+      "type": "application/json",
+      "title": "Cells 70\u00b0N\u201380\u00b0N, 100\u00b0W\u201390\u00b0W"
+    },
+    {
+      "rel": "child",
+      "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p70_m110/catalog.json",
+      "type": "application/json",
+      "title": "Cells 70\u00b0N\u201380\u00b0N, 110\u00b0W\u2013100\u00b0W"
+    },
+    {
+      "rel": "child",
+      "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p70_m120/catalog.json",
+      "type": "application/json",
+      "title": "Cells 70\u00b0N\u201380\u00b0N, 120\u00b0W\u2013110\u00b0W"
+    },
+    {
+      "rel": "child",
+      "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p70_m130/catalog.json",
+      "type": "application/json",
+      "title": "Cells 70\u00b0N\u201380\u00b0N, 130\u00b0W\u2013120\u00b0W"
+    },
+    {
+      "rel": "child",
+      "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p70_m140/catalog.json",
+      "type": "application/json",
+      "title": "Cells 70\u00b0N\u201380\u00b0N, 140\u00b0W\u2013130\u00b0W"
+    },
+    {
+      "rel": "child",
+      "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p70_m150/catalog.json",
+      "type": "application/json",
+      "title": "Cells 70\u00b0N\u201380\u00b0N, 150\u00b0W\u2013140\u00b0W"
+    },
+    {
+      "rel": "child",
+      "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p70_m160/catalog.json",
+      "type": "application/json",
+      "title": "Cells 70\u00b0N\u201380\u00b0N, 160\u00b0W\u2013150\u00b0W"
+    },
+    {
+      "rel": "child",
+      "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p70_m170/catalog.json",
+      "type": "application/json",
+      "title": "Cells 70\u00b0N\u201380\u00b0N, 170\u00b0W\u2013160\u00b0W"
+    },
+    {
+      "rel": "child",
+      "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p70_m70/catalog.json",
+      "type": "application/json",
+      "title": "Cells 70\u00b0N\u201380\u00b0N, 70\u00b0W\u201360\u00b0W"
+    },
+    {
+      "rel": "child",
+      "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p70_m80/catalog.json",
+      "type": "application/json",
+      "title": "Cells 70\u00b0N\u201380\u00b0N, 80\u00b0W\u201370\u00b0W"
+    },
+    {
+      "rel": "child",
+      "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p70_m90/catalog.json",
+      "type": "application/json",
+      "title": "Cells 70\u00b0N\u201380\u00b0N, 90\u00b0W\u201380\u00b0W"
+    },
+    {
+      "rel": "child",
+      "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p70_p10/catalog.json",
+      "type": "application/json",
+      "title": "Cells 70\u00b0N\u201380\u00b0N, 10\u00b0E\u201320\u00b0E"
+    },
+    {
+      "rel": "child",
+      "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p70_p20/catalog.json",
+      "type": "application/json",
+      "title": "Cells 70\u00b0N\u201380\u00b0N, 20\u00b0E\u201330\u00b0E"
+    },
+    {
+      "rel": "child",
+      "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p70_p30/catalog.json",
+      "type": "application/json",
+      "title": "Cells 70\u00b0N\u201380\u00b0N, 30\u00b0E\u201340\u00b0E"
+    },
+    {
+      "rel": "child",
+      "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p80_m100/catalog.json",
+      "type": "application/json",
+      "title": "Cells 80\u00b0N\u201390\u00b0N, 100\u00b0W\u201390\u00b0W"
+    },
+    {
+      "rel": "child",
+      "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p80_m70/catalog.json",
+      "type": "application/json",
+      "title": "Cells 80\u00b0N\u201390\u00b0N, 70\u00b0W\u201360\u00b0W"
+    },
+    {
+      "rel": "child",
+      "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p80_m80/catalog.json",
+      "type": "application/json",
+      "title": "Cells 80\u00b0N\u201390\u00b0N, 80\u00b0W\u201370\u00b0W"
+    },
+    {
+      "rel": "child",
+      "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p80_m90/catalog.json",
+      "type": "application/json",
+      "title": "Cells 80\u00b0N\u201390\u00b0N, 90\u00b0W\u201380\u00b0W"
+    }
+  ],
+  "updated": "2026-11-13T00:00:00Z"
+}

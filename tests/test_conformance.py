@@ -33,7 +33,12 @@ sys.path.insert(0, str(ROOT / "tools"))
 
 from publish import load_config  # noqa: E402
 
-ACCEPTED: set[str] = set()
+ACCEPTED: set[str] = {
+    # Metadata-first mirror: items live in Google's upstream STAC, reached
+    # through the collection's child/canonical links. See the row in
+    # docs/conformance.md and the pending portolan-spec issue it names.
+    "PTL-COL-005",
+}
 
 config = load_config()
 target = ROOT / config["publish_dir"]

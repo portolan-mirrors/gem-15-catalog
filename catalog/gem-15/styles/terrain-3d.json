@@ -1,0 +1,96 @@
+{
+  "version": 8,
+  "name": "GEM-15 3D Terrain",
+  "metadata": {
+    "description": "The GEM-15 elevation tint and hillshade draped over MapLibre 3D terrain driven by the same raster-dem source, with an atmospheric sky. The default camera looks across Barcelona from the Collserola ridge towards the sea. Because GEM-15 is a 15 m surface model, the mesh carries buildings and canopy, so at close range city blocks genuinely stand up off the ground rather than being painted on; that is the point of this style and also its main artifact, since a DSM extrudes trees and rooftops as if they were landform.",
+    "portolan:ramp": "The color ramp is the one from hypsometric.json. Stops in meters (EGM96): -430 #0f3d2e, -5 #1d5c42, 0 #5d7f93 (water / no-data), 1 #2d6a3f, 100 #4e8c4a, 300 #7aa85a, 600 #a8c06a, 900 #cfcf7d, 1200 #e2cf8c, 1600 #d8b074, 2000 #c0905c, 2400 #a4744a, 2800 #8a5c3e, 3200 #745038, 3600 #6d5b50, 4200 #8a7d74, 4800 #a99d95, 5400 #c9c0ba, 6000 #e6e2df, 6800 #ffffff, 8849 #ffffff.",
+    "portolan:palette-note": "Google's own GEM-15 visualization uses an 11-color palette applied cyclically, elevation modulo 100 m. It is modular and therefore cannot express absolute height, so it is kept for this collection's overview COG and an absolute hypsometric ramp is used here.",
+    "portolan:terrain": "terrain.exaggeration is 1.3, a mild lift that makes relief read at city and valley scale without turning hills into spikes. The hillshade uses the 'igor' method, which is designed to sit under other layers and so keeps the tint legible on the 3D mesh.",
+    "portolan:caveats": "Elevations are meters above the EGM96 geoid, not ellipsoidal heights and not EGM2008; apply a geoid correction before combining with other DEMs for altimetry. Surface model (DSM), not bare earth. GEM-15 encodes NaN and ocean alike as 0 m, so the sea is a flat plane at the 0 m water tone and tiles inside the excluded countries read as sea level rather than as a gap. Coverage runs 84N to 61S and excludes Russia, China, Mongolia and Greenland. India is intentionally offset upstream.",
+    "portolan:attribution": "This dataset is produced by Google | CC-BY-4.0",
+    "portolan:minimum-client": "MapLibre GL JS 5.6.0 or newer for the color-relief layer type; 3D terrain itself needs 2.2.0 or newer and the sky root 4.5.0 or newer. MapLibre Native (Android, iOS) does not implement the terrain or sky roots, so it will draw this style flat."
+  },
+  "center": [2.165, 41.395],
+  "zoom": 11,
+  "pitch": 60,
+  "bearing": 20,
+  "sources": {
+    "gem15-dsm": {
+      "type": "raster-dem",
+      "url": "pmtiles://https://data.source.coop/portolan-mirrors/gem-15-catalog/gem-15/terrain/gem-15-dsm-terrarium.pmtiles",
+      "encoding": "terrarium",
+      "tileSize": 256,
+      "minzoom": 0,
+      "maxzoom": 13,
+      "attribution": "This dataset is produced by Google | CC-BY-4.0"
+    }
+  },
+  "terrain": {
+    "source": "gem15-dsm",
+    "exaggeration": 1.3
+  },
+  "sky": {
+    "sky-color": "#5a8fd6",
+    "horizon-color": "#d8e4ef",
+    "fog-color": "#e8eef4",
+    "fog-ground-blend": 0.6,
+    "horizon-fog-blend": 0.6,
+    "sky-horizon-blend": 0.8,
+    "atmosphere-blend": 0.8
+  },
+  "layers": [
+    {
+      "id": "background",
+      "type": "background",
+      "paint": {
+        "background-color": "#36454f"
+      }
+    },
+    {
+      "id": "elevation-tint",
+      "type": "color-relief",
+      "source": "gem15-dsm",
+      "paint": {
+        "color-relief-color": [
+          "interpolate",
+          ["linear"],
+          ["elevation"],
+          -430, "#0f3d2e",
+          -5, "#1d5c42",
+          0, "#5d7f93",
+          1, "#2d6a3f",
+          100, "#4e8c4a",
+          300, "#7aa85a",
+          600, "#a8c06a",
+          900, "#cfcf7d",
+          1200, "#e2cf8c",
+          1600, "#d8b074",
+          2000, "#c0905c",
+          2400, "#a4744a",
+          2800, "#8a5c3e",
+          3200, "#745038",
+          3600, "#6d5b50",
+          4200, "#8a7d74",
+          4800, "#a99d95",
+          5400, "#c9c0ba",
+          6000, "#e6e2df",
+          6800, "#ffffff",
+          8849, "#ffffff"
+        ]
+      }
+    },
+    {
+      "id": "hillshade",
+      "type": "hillshade",
+      "source": "gem15-dsm",
+      "paint": {
+        "hillshade-method": "igor",
+        "hillshade-exaggeration": 0.45,
+        "hillshade-illumination-direction": 335,
+        "hillshade-shadow-color": "rgba(24, 22, 18, 0.5)",
+        "hillshade-highlight-color": "rgba(255, 253, 245, 0.22)",
+        "hillshade-accent-color": "rgba(0, 0, 0, 0)"
+      }
+    }
+  ]
+}

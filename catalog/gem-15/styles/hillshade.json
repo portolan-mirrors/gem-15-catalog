@@ -1,0 +1,45 @@
+{
+  "version": 8,
+  "name": "GEM-15 Hillshade",
+  "metadata": {
+    "description": "Shaded relief of the GEM-15 15 m DSM on a neutral ground, with no elevation color at all. This is the style for reading landform and texture rather than height: terraces, levees, quarry benches, dune fields, landslide scars and, because GEM-15 is a surface model, individual buildings and tree lines. Nothing here encodes absolute elevation, so it is safe over any terrain range and at any latitude in the covered area.",
+    "portolan:hillshade-method": "hillshade-method is set to 'combined', whose shading intensity scales with slope, so gentle ground stays legible while steep faces go properly dark. That is the right trade-off when the hillshade is the only thing on the map. MapLibre also offers 'igor' (deliberately flat, meant to sit under other layers, which is what this collection's hypsometric style uses), 'multidirectional' (several light sources, softer and less directional), 'basic' (plain Lambertian cosine shading) and 'standard' (the legacy algorithm). hillshade-method requires MapLibre GL JS 5.5.0 or newer; older clients ignore it and fall back to the legacy shading.",
+    "portolan:caveats": "Elevations are meters above the EGM96 geoid, not ellipsoidal heights and not EGM2008; apply a geoid correction before combining with other DEMs for altimetry. Surface model (DSM), not bare earth, so canopy and buildings are shaded as terrain. GEM-15 encodes NaN and ocean alike as 0 m, so flat water and missing data both shade as a level plain. Coverage runs 84N to 61S and excludes Russia, China, Mongolia and Greenland. India is intentionally offset upstream.",
+    "portolan:attribution": "This dataset is produced by Google | CC-BY-4.0"
+  },
+  "center": [2.165, 41.395],
+  "zoom": 11,
+  "sources": {
+    "gem15-dsm": {
+      "type": "raster-dem",
+      "url": "pmtiles://https://data.source.coop/portolan-mirrors/gem-15-catalog/gem-15/terrain/gem-15-dsm-terrarium.pmtiles",
+      "encoding": "terrarium",
+      "tileSize": 256,
+      "minzoom": 0,
+      "maxzoom": 13,
+      "attribution": "This dataset is produced by Google | CC-BY-4.0"
+    }
+  },
+  "layers": [
+    {
+      "id": "background",
+      "type": "background",
+      "paint": {
+        "background-color": "#ebe7e0"
+      }
+    },
+    {
+      "id": "hillshade",
+      "type": "hillshade",
+      "source": "gem15-dsm",
+      "paint": {
+        "hillshade-method": "combined",
+        "hillshade-exaggeration": 0.75,
+        "hillshade-illumination-direction": 335,
+        "hillshade-shadow-color": "#4a4440",
+        "hillshade-highlight-color": "#fffdf7",
+        "hillshade-accent-color": "rgba(90, 84, 78, 0.35)"
+      }
+    }
+  ]
+}

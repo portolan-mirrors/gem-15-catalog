@@ -1,0 +1,80 @@
+{
+  "version": 8,
+  "name": "GEM-15 Elevation Tint",
+  "metadata": {
+    "description": "Absolute hypsometric tint of the GEM-15 15 m DSM, with an Igor hillshade laid over it. Colour is keyed to true elevation in meters above the EGM96 geoid, from the Dead Sea shore (-430 m) to the high Himalaya, so the same color means the same height anywhere on Earth. Because this is a DSM, buildings, canopy and other surface cover are part of the terrain: city blocks read as plateaus and forest edges as cliffs. GEM-15 encodes NaN and ocean alike as 0 m, so the 0 m stop is painted as water and doubles as the no-data tone; tiles inside the excluded countries therefore read as sea level rather than as a gap. Coverage runs 84N to 61S and excludes Russia, China, Mongolia and Greenland.",
+    "portolan:ramp": "Stops in meters (EGM96): -430 #0f3d2e, -5 #1d5c42, 0 #5d7f93 (water / no-data), 1 #2d6a3f, 100 #4e8c4a, 300 #7aa85a, 600 #a8c06a, 900 #cfcf7d, 1200 #e2cf8c, 1600 #d8b074, 2000 #c0905c, 2400 #a4744a, 2800 #8a5c3e, 3200 #745038, 3600 #6d5b50, 4200 #8a7d74, 4800 #a99d95, 5400 #c9c0ba, 6000 #e6e2df, 6800 #ffffff, 8849 #ffffff. The deliberate 0 m to 1 m step puts a hard coastline between the water tone and the lowland greens.",
+    "portolan:palette-note": "Google's own GEM-15 visualization (the Earth Engine example script) uses an 11-color palette applied cyclically, elevation modulo 100 m. That is a relief-reading device, not an elevation scale: it shows fine vertical structure beautifully but the same color recurs at 40 m, 140 m and 240 m. It is modular, so it cannot express absolute height and is unsuited to an absolute ramp. The cyclic palette is reproduced in this collection's overview COG instead; this style uses a conventional absolute hypsometric ramp so that color carries height.",
+    "portolan:caveats": "Elevations are meters above the EGM96 geoid, not ellipsoidal heights and not EGM2008; apply a geoid correction before combining with other DEMs for altimetry. Surface model (DSM), not bare earth. India is intentionally offset upstream.",
+    "portolan:attribution": "This dataset is produced by Google | CC-BY-4.0",
+    "portolan:minimum-client": "MapLibre GL JS 5.6.0 or newer, which is where the color-relief layer type was introduced. The hillshade-method property needs 5.5.0 or newer."
+  },
+  "center": [2.165, 41.395],
+  "zoom": 11,
+  "sources": {
+    "gem15-dsm": {
+      "type": "raster-dem",
+      "url": "pmtiles://https://data.source.coop/portolan-mirrors/gem-15-catalog/gem-15/terrain/gem-15-dsm-terrarium.pmtiles",
+      "encoding": "terrarium",
+      "tileSize": 256,
+      "minzoom": 0,
+      "maxzoom": 13,
+      "attribution": "This dataset is produced by Google | CC-BY-4.0"
+    }
+  },
+  "layers": [
+    {
+      "id": "background",
+      "type": "background",
+      "paint": {
+        "background-color": "#36454f"
+      }
+    },
+    {
+      "id": "elevation-tint",
+      "type": "color-relief",
+      "source": "gem15-dsm",
+      "paint": {
+        "color-relief-color": [
+          "interpolate",
+          ["linear"],
+          ["elevation"],
+          -430, "#0f3d2e",
+          -5, "#1d5c42",
+          0, "#5d7f93",
+          1, "#2d6a3f",
+          100, "#4e8c4a",
+          300, "#7aa85a",
+          600, "#a8c06a",
+          900, "#cfcf7d",
+          1200, "#e2cf8c",
+          1600, "#d8b074",
+          2000, "#c0905c",
+          2400, "#a4744a",
+          2800, "#8a5c3e",
+          3200, "#745038",
+          3600, "#6d5b50",
+          4200, "#8a7d74",
+          4800, "#a99d95",
+          5400, "#c9c0ba",
+          6000, "#e6e2df",
+          6800, "#ffffff",
+          8849, "#ffffff"
+        ]
+      }
+    },
+    {
+      "id": "hillshade",
+      "type": "hillshade",
+      "source": "gem15-dsm",
+      "paint": {
+        "hillshade-method": "igor",
+        "hillshade-exaggeration": 0.5,
+        "hillshade-illumination-direction": 335,
+        "hillshade-shadow-color": "rgba(24, 22, 18, 0.55)",
+        "hillshade-highlight-color": "rgba(255, 253, 245, 0.25)",
+        "hillshade-accent-color": "rgba(0, 0, 0, 0)"
+      }
+    }
+  ]
+}
