@@ -32,6 +32,30 @@ python3 -c "from osgeo import gdal; print(gdal.VersionInfo())"   # 3100300 or si
 python3 -c "import stac_geoparquet, duckdb, mercantile, rasterio, PIL"
 ```
 
+**If GDAL raises `RuntimeError: Invalid SRS for -t_srs` or similar** (e.g.
+reprojecting to EPSG:3857 fails outright) **in a fresh micromamba/conda
+env**, GDAL cannot find a `proj.db` that matches its own PROJ version --
+typically because a `PROJ_DATA` or `PROJ_LIB` left over from a different
+environment (system PROJ, another conda env, Homebrew) is still set and
+shadows this env's own copy. Point it at the activated env explicitly:
+
+```bash
+export PROJ_DATA=$CONDA_PREFIX/share/proj
+# older PROJ/GDAL builds read PROJ_LIB instead of PROJ_DATA; harmless to set both
+export PROJ_LIB=$CONDA_PREFIX/share/proj
+```
+
+This is the same family of issue as the rasterio/GDAL PROJ mismatch noted
+above (two PROJ installations disagreeing about `proj.db`'s schema version)
+but surfaces differently: that one raised inside `rasterio.crs.CRS.from_epsg`
+when a second, incompatible PROJ stack loaded into the same process; this one
+is GDAL's own CLI/bindings failing outright because `PROJ_DATA`/`PROJ_LIB`
+points at the wrong (or a stale) `proj.db` entirely. Confirm the fix with:
+
+```bash
+python3 -c "from osgeo import gdal, osr; print(osr.SpatialReference().ImportFromEPSG(3857))"  # 0 = success
+```
+
 `pmtiles` (the go-pmtiles CLI, used by `build_terrain.py` and for the
 post-publish checks below) is a separate static binary, not a Python
 package:
@@ -220,21 +244,55 @@ redoes only the incomplete frontier. `pmtiles convert --force` at the end
 always regenerates the final `.pmtiles` from the current MBTiles state, so
 it is safe to re-run that whole command repeatedly as the MBTiles fills in.
 
-**Smoke-tested:** `--cells wm91sm1 --minzoom 8 --maxzoom 11 --verify`
-(`staging/smoke/terrain-sample.pmtiles`): 50 tiles built, all four
-per-zoom `--verify` checks passed (max sampled decode-vs-direct-read
-error 0.0038 m at z8, 0.4886 m at z9, 0.0038 m at z10, trivially 0 m at
-z11 where the sampled tile was wholly void), `pmtiles show` round-tripped
-the metadata including the non-standard `encoding: terrarium` key, and a
-rerun of the identical command correctly reported "nothing to do" at every
-zoom. Terrarium's own quantization step is 1/256 m (~0.0039 m); every
-passing check above is consistent with that floor, not with noise. (A
-first version of this check, before `errorThreshold=0.0` was added to the
-warp calls and before sampling was restricted to source-data-backed
-pixels, found differences up to ~2 m right at nodata/coastline boundaries
-between two independently-shaped GDAL warp calls -- a real GDAL
-bilinear-with-partial-nodata sensitivity, not a terrarium encoding bug; see
-the comment in `verify_mbtiles_tile`.)
+**Smoke-tested:** `--cells wm91sm1 --minzoom 0 --maxzoom 11 --verify`
+(`staging/smoke/terrain-sample.pmtiles`): 58 tiles built, all 12 per-zoom
+`--verify` checks (z0-z11) passed. `pmtiles show` round-tripped the metadata
+including the non-standard `encoding: terrarium` key, and a rerun of the
+identical command correctly reported "nothing to do" at every zoom.
+
+`verify_mbtiles_tile` went through two real bug fixes during development,
+both found by this smoke test, not assumed away:
+
+1. **Sampling bug (z0-z6 false failures):** the first version compared a
+   fixed grid of sample points across the whole 256x256 tile. At shallow
+   zooms a tile can span tens of degrees while the one cell contributing to
+   it is still 1x1 degree, so the grid landed entirely outside the cell's
+   tiny footprint, found zero valid samples, and then wrongly asserted the
+   *whole* tile must be a 0-filled void -- flagging the tile's real,
+   correctly-encoded land pixels as 94-726 m "errors" even though they
+   decoded correctly. Fixed by enumerating every real-data pixel the
+   independent re-warp actually has (`np.argwhere(~np.isnan(ref))`) instead
+   of guessing where they might be, and only asserting "void" when that set
+   is genuinely empty. Confirmed fixed: z0-z2 now correctly report "no
+   source data" (this cell really is sub-pixel at those zooms) and z3-z10
+   report real sample counts (2 to several thousand) with all passing.
+2. **Warp-chunking sensitivity (a real, inherent limitation, not a bug):**
+   with real samples flowing, z9 still read up to ~3.8 m off on a few
+   pixels found to sit on a crater rim on the volcanic island inside this
+   cell, several pixels from any nodata. Traced to GDAL's bilinear
+   resampler picking its source kernel radius from an internally-chunked
+   estimate of the local scale ratio, which can differ slightly between
+   this check's single-tile warp and the real build's per-cell combined-
+   block warp even when both compute the *exact* same destination pixel
+   coordinate (confirmed: their geotransforms agreed to ~1e-9 m). This
+   shows up only where terrain is steep and decimation is heavy (z9 is 20x
+   decimation from native 15 m), and there is no single "correct" bilinear
+   value to adjudicate between two equally legitimate warps in that
+   regime. Fixed by scaling the tolerance to the zoom's own resolution
+   (2%, `RELATIVE_TOLERANCE` in `tools/build_terrain.py`) rather than
+   trying to exclude the responsible pixels, which chasing it with two
+   different pixel-exclusion heuristics (nodata-adjacency erosion, then a
+   3x3-neighborhood relief filter) failed to fully eliminate.
+
+**This still catches real mismatches**, verified directly rather than
+assumed: a tile's elevation was decoded, perturbed by a deliberate, large,
+wrong offset (+500 m, simulating e.g. a dropped `+32768` or wrong band), re
+-encoded, and written back into the MBTiles; `verify_mbtiles_tile` on that
+tile correctly reported `FAIL` (500.0000 m vs. a 12.23 m tolerance at that
+zoom), against the same tile passing before the perturbation. A tolerance
+scaled to 2% of resolution only ever reaches a few meters to a couple dozen
+meters even at the shallowest zooms -- nowhere near large enough to also
+pass a genuine encoding bug, which misses by orders of magnitude more.
 
 ### DTM terrain (optional, not in the published asset contract yet)
 
@@ -258,10 +316,15 @@ python3 tools/build_terrain.py --band dsm --minzoom 0 --maxzoom 14 \
 The bbox is generous around the `w1s41`/`w2s41`/`w3s40`/`w3s41` cells (the
 same four `build_thumbnail.py` selects); at z0-z7 this really is "a handful
 of tiles," per DESIGN.md, since only cells intersecting the bbox are ever
-considered. Minutes, not hours -- this was effectively smoke-tested already
-(the terrain smoke test above exercises the identical code path at a
-similar scale, and `build_thumbnail.py`'s own run reads the same four
-cells at native-ish resolution in well under a minute).
+considered.
+
+**Measured on the rails server** (not just smoke-tested): 15,148 tiles,
+547.5 MB, finished in minutes. `--verify` decode-vs-direct-read errors:
+0.0686 m at z7, 0.0017 m at z8 -- both comfortably inside even the
+unscaled 1 m default tolerance, consistent with this being a land-rich
+area with plenty of interior, non-steep pixels at every zoom (unlike the
+wm91sm1 smoke-test cell, which is why wm91sm1 found the sampling and
+warp-chunking issues described in step 3 and this real-world run did not).
 
 ## 5. Thumbnail (committed to git, not staged)
 

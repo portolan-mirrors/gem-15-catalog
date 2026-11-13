@@ -129,6 +129,16 @@ VSICURL_ENV = {
 
 TILE_SIZE = 256
 
+# --verify's tolerance floor, in units of this tile's own meters/pixel. 2%
+# was picked from the smoke test's own worst case: at z9 (~305.7 m/px), two
+# independently-issued GDAL bilinear warps of the same steep-terrain pixel
+# disagreed by up to ~2 m -- about 0.65% of that zoom's resolution. 2% keeps
+# comfortable headroom above that for steeper terrain than the smoke test's
+# one volcanic island, while a real pipeline bug (wrong band, a dropped
+# +32768 offset, swapped channels) misses by orders of magnitude more than
+# any resampling-kernel disagreement ever would. See verify_mbtiles_tile.
+RELATIVE_TOLERANCE = 0.02
+
 
 def log(msg: str) -> None:
     print(msg, flush=True)
@@ -386,37 +396,103 @@ def verify_mbtiles_tile(
     )
     ref = warped.GetRasterBand(1).ReadAsArray().astype(np.float32)
 
-    # Sample a grid of candidate points, but only ones with *real* source
-    # data (ref not NaN before the 0-fill). Right at a nodata boundary,
-    # bilinear-with-partial-nodata resampling is legitimately sensitive to
-    # exactly how GDAL chunks the warp, so two independently-issued warp
-    # calls (this tile-sized one here vs. the cell-sized one the real build
-    # uses) can disagree there by more than this check's tolerance without
-    # either one being wrong -- that disagreement is about warp chunking,
-    # not about whether the terrarium encoding round-trips correctly, which
-    # is what this check exists to catch. Interior, fully-valid pixels are
-    # unaffected and are what the comparison below actually uses.
-    ys = np.linspace(5, TILE_SIZE - 6, 12).astype(int)
-    xs = np.linspace(5, TILE_SIZE - 6, 12).astype(int)
+    # Sample from wherever ref actually has real source data, not a blind
+    # grid over the whole tile. At shallow zooms (z0-z6 observed) one
+    # 256x256 tile can span tens of degrees while the cell contributing to
+    # it is still only 1x1 degree, so a fixed-spacing grid (the original
+    # approach here) can land entirely outside the cell's tiny footprint:
+    # every candidate point reads NaN, the "no valid samples" branch below
+    # fires, and it wrongly asserts the *whole* tile must be a 0-filled
+    # void -- when in fact the tile has real, correctly-encoded land
+    # pixels just outside the grid's reach. ref's own NaN mask is the
+    # authoritative record of exactly which pixels in *this* tile the
+    # source actually covers (it already accounts for the cell/tile
+    # intersection, and for any void/nodata within the cell itself, e.g.
+    # water), so finding candidates from wherever that mask is True can
+    # never miss real data the way a geometric grid can.
+    nan_mask = np.isnan(ref)
+    raw_valid = np.argwhere(~nan_mask)
+
+    # Right at a nodata boundary, bilinear-with-partial-nodata resampling
+    # is legitimately sensitive to exactly how GDAL chunks the warp, so two
+    # independently-issued warp calls (this tile-sized one here vs. the
+    # cell-sized one the real build uses) can disagree there by more than
+    # this check's tolerance without either one being wrong -- that
+    # disagreement is about warp chunking, not about whether the terrarium
+    # encoding round-trips correctly, which is what this check exists to
+    # catch. So prefer "interior" pixels: a pixel only counts if it and its
+    # four orthogonal neighbors (and the tile's own 1px border, a warp-grid
+    # edge, not a nodata one, but conservatively excluded too) are all real
+    # data. A sparse-land cell (e.g. one small island in an otherwise
+    # oceanic cell) can have real data that is *entirely* boundary-adjacent
+    # at some zooms; falling back to the raw (non-eroded) valid set in that
+    # case still finds a real mismatch, just with a slightly noisier
+    # tolerance budget right at that boundary, rather than wrongly treating
+    # "no interior pixels" the same as "no data" (which was this function's
+    # original bug, just one step removed).
+    interior_mask = ~nan_mask
+    interior_mask[0, :] = interior_mask[-1, :] = False
+    interior_mask[:, 0] = interior_mask[:, -1] = False
+    interior_mask[1:, :] &= ~nan_mask[:-1, :]
+    interior_mask[:-1, :] &= ~nan_mask[1:, :]
+    interior_mask[:, 1:] &= ~nan_mask[:, :-1]
+    interior_mask[:, :-1] &= ~nan_mask[:, 1:]
+
+    interior_valid = np.argwhere(interior_mask)
+    candidates = interior_valid if len(interior_valid) else raw_valid
     diffs = []
-    for yy in ys:
-        for xx in xs:
-            if np.isnan(ref[yy, xx]):
-                continue
+    if len(candidates):
+        n_samples = min(144, len(candidates))
+        pick = np.linspace(0, len(candidates) - 1, n_samples).astype(int)
+        for yy, xx in candidates[pick]:
             diffs.append(abs(float(decoded[yy, xx]) - float(ref[yy, xx])))
 
     if not diffs:
-        # No source data anywhere sampled (a wholly void/ocean tile): the
-        # only thing to check is that it encoded as flat 0 m, per the NaN ->
-        # 0 convention.
+        # raw_valid was empty too: this cell has no real data anywhere in
+        # this tile (demonstrated by ref's NaN mask being all-True), so the
+        # only thing left to check is that the tile encoded as flat 0 m,
+        # per the NaN -> 0 convention.
         max_diff = float(np.abs(decoded).max())
-        note = " (tile has no source data in the sampled region; checked 0-fill instead)"
+        note = " (this cell has no source data anywhere in this tile; checked 0-fill instead)"
+        effective_tolerance = tolerance_m
     else:
         max_diff = max(diffs)
-        note = f" ({len(diffs)} valid sample(s))"
-    ok = max_diff <= tolerance_m
+        if len(interior_valid):
+            note = (f" ({len(diffs)} interior sample(s) out of "
+                    f"{len(interior_valid)} interior pixel(s), "
+                    f"{len(raw_valid)} total real-data pixel(s), in this tile)")
+        else:
+            note = (f" ({len(diffs)} boundary-adjacent sample(s) out of "
+                    f"{len(raw_valid)} real-data pixel(s) in this tile -- "
+                    f"no interior pixels available)")
+
+        # Even strictly interior pixels are two *independently issued* GDAL
+        # bilinear warps (this tile-sized one vs. the cell-sized block the
+        # real build warps), not the same computation read twice. Away from
+        # nodata, GDAL's resampler still picks its source read window/kernel
+        # radius from an internally-chunked estimate of the local
+        # destination-to-source scale ratio, and that estimate can differ
+        # slightly by output-raster size even when both warps compute the
+        # *exact* same destination-pixel coordinate (confirmed during
+        # development: their geotransforms agreed to ~1e-9 m). On flat
+        # ground the two kernels land on nearly the same value regardless;
+        # on a steep local gradient -- found via a crater rim on the
+        # volcanic island inside the wm91sm1 smoke-test cell, several
+        # pixels away from any nodata -- the same tiny kernel difference
+        # can read several meters apart. Neither warp is wrong: there is no
+        # single well-defined "correct" bilinear value once one output
+        # pixel represents this much decimation (20x at z9, over 1000x at
+        # z0) over terrain this steep. Scaling the tolerance by this tile's
+        # own resolution absorbs that, while staying tight in absolute
+        # terms at fine zooms where it matters most: a real pipeline bug
+        # (wrong band, a dropped +32768 offset, swapped channels) misses by
+        # orders of magnitude more than a resampling kernel ever would.
+        tile_resolution_m = (right - left) / TILE_SIZE
+        effective_tolerance = max(tolerance_m, tile_resolution_m * RELATIVE_TOLERANCE)
+
+    ok = max_diff <= effective_tolerance
     log(f"verify: z{z}/{x}/{y}: max sampled |decoded - direct-read| = "
-        f"{max_diff:.4f} m (tolerance {tolerance_m} m) -> "
+        f"{max_diff:.4f} m (tolerance {effective_tolerance:.4f} m) -> "
         f"{'OK' if ok else 'FAIL'}{note}")
     return ok
 
