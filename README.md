@@ -20,12 +20,18 @@ place and adds:
   visualization.
 - **Terrarium-encoded terrain PMTiles**, so MapLibre GL can use GEM-15 as an
   elevation layer (`raster-dem`): hillshade, color-relief, and 3D terrain, with
-  ready-made styles in `catalog/gem-15/styles/`.
+  ready-made styles in `catalog/gem-15/styles/`. A
+  [live example](https://portolan-mirrors.github.io/gem-15-catalog/maplibre-terrain/)
+  draws them in the browser, and its source is in
+  [`examples/maplibre-terrain/`](examples/maplibre-terrain/).
 
 ## Layout
 
 - `catalog/` — the published catalog: everything in it is published, nothing
   outside it ever is. STAC JSON, README/AGENTS guides, styles.
+- `examples/` — browser applications that read the published catalog. GitHub
+  Pages serves them from this directory. The publisher never uploads them,
+  because they sit outside `catalog/`.
 - `staging/publish/` — generated data files (gitignored): items.parquet,
   overview COG, terrain PMTiles, thumbnail. Uploaded by
   `tools/upload_data.py`.

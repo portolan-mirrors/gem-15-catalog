@@ -1,0 +1,58 @@
+# Publishes examples/ to GitHub Pages.
+#
+# The examples are browser applications that read the published catalog. They
+# sit outside catalog/, so tools/upload_data.py never uploads them to Source
+# Cooperative. The publish boundary stays metadata and styles, and Pages hosts
+# the applications instead.
+#
+# The artifact is examples/ itself, so examples/index.html becomes the site
+# root and each example keeps its directory name in the path. The MapLibre
+# terrain example is at /maplibre-terrain/.
+#
+# The path filter is safe here. This workflow deploys a site and gates no pull
+# request, so a skipped run leaves no required check pending.
+name: Pages
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - examples/**
+      - .github/workflows/pages.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  # One deployment at a time. A cancelled deployment can leave the site on a
+  # half-published state, so a queued run waits rather than replacing the run
+  # in front of it.
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      # deploy-pages signs in with an OpenID Connect token and needs both.
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Package examples/ as the site
+        uses: actions/upload-pages-artifact@v5
+        with:
+          path: examples/
+
+      - name: Deploy to Pages
+        id: deploy
+        uses: actions/deploy-pages@v5

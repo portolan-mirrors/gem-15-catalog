@@ -228,6 +228,13 @@ absolute elevation tint under a hillshade), `hillshade.json` (relief only) and
 `terrain-3d.json` (tint, hillshade and 3D terrain). A smaller demo archive over
 Barcelona, one zoom deeper, is at `terrain/gem-15-dsm-terrarium-demo-barcelona.pmtiles`.
 
+A worked example draws all three styles in the browser, with a 3D terrain toggle
+and an exaggeration slider, at
+[portolan-mirrors.github.io/gem-15-catalog/maplibre-terrain/](https://portolan-mirrors.github.io/gem-15-catalog/maplibre-terrain/).
+Its source is in
+[`examples/maplibre-terrain/`](https://github.com/portolan-mirrors/gem-15-catalog/tree/main/examples/maplibre-terrain)
+in the catalog repository, outside the published catalog.
+
 ## Files
 
 | File | What it is |
