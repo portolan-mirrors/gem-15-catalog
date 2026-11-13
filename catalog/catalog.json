@@ -4,14 +4,25 @@
   "stac_extensions": [
     "https://schemas.portolan-sdi.org/portolan/v0.2.0/schema.json"
   ],
-  "id": "example-catalog",
-  "title": "Example Catalog",
-  "description": "TODO(setup): one or two sentences saying what this catalog holds, who produced the data, and who it is for. A person and an agent both read this first.",
+  "id": "gem-15-catalog",
+  "title": "GEM-15: Google Elevation Models at 15 m",
+  "description": "Cloud-native mirror catalog for GEM-15, Google Research's experimental near-global surface (DSM) and bare-earth (DTM) elevation models at 15 m, derived from sub-meter optical stereo imagery. The 26,970 Cloud-Optimized GeoTIFFs stay at Google's public bucket; this catalog adds Portolan metadata, documentation, a global overview, and a terrarium-encoded terrain layer for MapLibre.",
   "links": [
     {
       "rel": "root",
       "href": "./catalog.json",
       "type": "application/json"
+    },
+    {
+      "rel": "self",
+      "href": "https://data.source.coop/portolan-mirrors/gem-15-catalog/catalog.json",
+      "type": "application/json"
+    },
+    {
+      "rel": "child",
+      "href": "./gem-15/collection.json",
+      "type": "application/json",
+      "title": "GEM-15: Surface and Terrain Elevation at 15 m"
     },
     {
       "rel": "describedby",
@@ -27,12 +38,12 @@
     },
     {
       "rel": "vcs",
-      "href": "https://github.com/TODO(setup)",
+      "href": "https://github.com/portolan-mirrors/gem-15-catalog",
       "title": "Source repository"
     },
     {
       "rel": "issues",
-      "href": "https://github.com/TODO(setup)/issues",
+      "href": "https://github.com/portolan-mirrors/gem-15-catalog/issues",
       "title": "Issue tracker"
     }
   ]

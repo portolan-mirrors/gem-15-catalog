@@ -3,31 +3,43 @@
 # Everything under publish_dir is synced 1:1 to write_prefix. Data files are
 # never placed under publish_dir, so they cannot be published by accident.
 #
-# TODO(setup): replace the three sentinel values below. tools/publish.py
-# refuses to upload while any of them is unchanged.
+# Source Cooperative serves these objects. data.source.coop returns raw bytes.
+# source.coop renders the human-facing page.
 
-# The S3 URI uploads are written to. Copy it from your storage provider.
-write_prefix: s3://EXAMPLE-BUCKET/EXAMPLE-PREFIX
+# The S3 URI uploads are written to: the real bucket behind Source Cooperative,
+# as the other portolan-mirrors catalogs use. CI writes through the IAM role
+# Source Cooperative approved for the portolan-mirrors organization.
+write_prefix: s3://us-west-2.opendata.source.coop/portolan-mirrors/gem-15-catalog
 
 # The public base URL that serves write_prefix. Every href in the catalog is
 # built from this, so it goes in the STAC JSON and write_prefix does not.
-public_base: https://example.invalid/EXAMPLE-PREFIX
+public_base: https://data.source.coop/portolan-mirrors/gem-15-catalog
 
 region: us-west-2
 
-# The named AWS profile the publisher uses. Optional. Leave it commented out
-# to use the default boto3 session. Source Cooperative issues per-account
-# credentials, so set the profile name you stored them under.
-# profile: my-source-coop-profile
+# No endpoint_url: write_prefix names the bucket in AWS S3 directly.
+#
+# Publishing by hand instead, with your own Source Cooperative login, goes
+# through the data.source.coop gateway, where the account is the bucket. Use
+# these values for that run (and do not commit them):
+#   write_prefix: s3://portolan-mirrors/gem-15-catalog
+#   endpoint_url: https://data.source.coop
+#   profile: source-coop      # credential_process = source-coop creds
+
+# The named AWS profile for a local run with the organization role. CI leaves
+# it unused: configure-aws-credentials puts the role in the environment, and
+# publish.py prefers that whenever AWS_ACCESS_KEY_ID is set.
+profile: portolan-mirrors
 
 # The directory that IS the published catalog, synced 1:1 to write_prefix.
 # Nothing outside it is ever uploaded.
 publish_dir: catalog
 
-# The staging directory that holds data files, read by tools/upload_data.py.
-# Optional. Leave it commented out if you stage no data. tools/publish.py
-# never reads this key, so setting it does not widen the publish boundary.
-# Data files are too large for git, so keep this directory out of the
-# repository or ignored by it. Only the suffixes in PUBLISHABLE_SUFFIXES
-# upload. See the allow-list in tools/upload_data.py.
-# data_dir: ../catalog-staging
+# The staging directory that holds generated files too large or too numerous
+# for git, read by tools/upload_data.py: the generated item tree (13,485 item
+# JSONs plus the 10-degree group catalogs with their README/AGENTS files),
+# items.parquet, the overview COG, the terrarium terrain PMTiles, and
+# thumbnails. It mirrors the catalog layout, so staging/publish/gem-15/x lands
+# at gem-15/x in the bucket. The GEM-15 COGs themselves are never staged: this
+# catalog references them at Google's bucket.
+data_dir: staging/publish

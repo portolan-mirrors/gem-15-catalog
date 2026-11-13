@@ -1,0 +1,1784 @@
+[
+  {
+    "rel": "child",
+    "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/m10_m100/catalog.json",
+    "type": "application/json",
+    "title": "Cells 10°S–0°, 100°W–90°W"
+  },
+  {
+    "rel": "child",
+    "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/m10_m140/catalog.json",
+    "type": "application/json",
+    "title": "Cells 10°S–0°, 140°W–130°W"
+  },
+  {
+    "rel": "child",
+    "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/m10_m150/catalog.json",
+    "type": "application/json",
+    "title": "Cells 10°S–0°, 150°W–140°W"
+  },
+  {
+    "rel": "child",
+    "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/m10_m160/catalog.json",
+    "type": "application/json",
+    "title": "Cells 10°S–0°, 160°W–150°W"
+  },
+  {
+    "rel": "child",
+    "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/m10_m170/catalog.json",
+    "type": "application/json",
+    "title": "Cells 10°S–0°, 170°W–160°W"
+  },
+  {
+    "rel": "child",
+    "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/m10_m180/catalog.json",
+    "type": "application/json",
+    "title": "Cells 10°S–0°, 180°W–170°W"
+  },
+  {
+    "rel": "child",
+    "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/m10_m20/catalog.json",
+    "type": "application/json",
+    "title": "Cells 10°S–0°, 20°W–10°W"
+  },
+  {
+    "rel": "child",
+    "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/m10_m40/catalog.json",
+    "type": "application/json",
+    "title": "Cells 10°S–0°, 40°W–30°W"
+  },
+  {
+    "rel": "child",
+    "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/m10_m50/catalog.json",
+    "type": "application/json",
+    "title": "Cells 10°S–0°, 50°W–40°W"
+  },
+  {
+    "rel": "child",
+    "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/m10_m60/catalog.json",
+    "type": "application/json",
+    "title": "Cells 10°S–0°, 60°W–50°W"
+  },
+  {
+    "rel": "child",
+    "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/m10_m70/catalog.json",
+    "type": "application/json",
+    "title": "Cells 10°S–0°, 70°W–60°W"
+  },
+  {
+    "rel": "child",
+    "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/m10_m80/catalog.json",
+    "type": "application/json",
+    "title": "Cells 10°S–0°, 80°W–70°W"
+  },
+  {
+    "rel": "child",
+    "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/m10_m90/catalog.json",
+    "type": "application/json",
+    "title": "Cells 10°S–0°, 90°W–80°W"
+  },
+  {
+    "rel": "child",
+    "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/m10_p0/catalog.json",
+    "type": "application/json",
+    "title": "Cells 10°S–0°, 0°–10°E"
+  },
+  {
+    "rel": "child",
+    "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/m10_p10/catalog.json",
+    "type": "application/json",
+    "title": "Cells 10°S–0°, 10°E–20°E"
+  },
+  {
+    "rel": "child",
+    "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/m10_p100/catalog.json",
+    "type": "application/json",
+    "title": "Cells 10°S–0°, 100°E–110°E"
+  },
+  {
+    "rel": "child",
+    "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/m10_p110/catalog.json",
+    "type": "application/json",
+    "title": "Cells 10°S–0°, 110°E–120°E"
+  },
+  {
+    "rel": "child",
+    "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/m10_p120/catalog.json",
+    "type": "application/json",
+    "title": "Cells 10°S–0°, 120°E–130°E"
+  },
+  {
+    "rel": "child",
+    "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/m10_p130/catalog.json",
+    "type": "application/json",
+    "title": "Cells 10°S–0°, 130°E–140°E"
+  },
+  {
+    "rel": "child",
+    "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/m10_p140/catalog.json",
+    "type": "application/json",
+    "title": "Cells 10°S–0°, 140°E–150°E"
+  },
+  {
+    "rel": "child",
+    "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/m10_p150/catalog.json",
+    "type": "application/json",
+    "title": "Cells 10°S–0°, 150°E–160°E"
+  },
+  {
+    "rel": "child",
+    "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/m10_p160/catalog.json",
+    "type": "application/json",
+    "title": "Cells 10°S–0°, 160°E–170°E"
+  },
+  {
+    "rel": "child",
+    "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/m10_p170/catalog.json",
+    "type": "application/json",
+    "title": "Cells 10°S–0°, 170°E–180°E"
+  },
+  {
+    "rel": "child",
+    "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/m10_p20/catalog.json",
+    "type": "application/json",
+    "title": "Cells 10°S–0°, 20°E–30°E"
+  },
+  {
+    "rel": "child",
+    "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/m10_p30/catalog.json",
+    "type": "application/json",
+    "title": "Cells 10°S–0°, 30°E–40°E"
+  },
+  {
+    "rel": "child",
+    "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/m10_p40/catalog.json",
+    "type": "application/json",
+    "title": "Cells 10°S–0°, 40°E–50°E"
+  },
+  {
+    "rel": "child",
+    "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/m10_p50/catalog.json",
+    "type": "application/json",
+    "title": "Cells 10°S–0°, 50°E–60°E"
+  },
+  {
+    "rel": "child",
+    "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/m10_p70/catalog.json",
+    "type": "application/json",
+    "title": "Cells 10°S–0°, 70°E–80°E"
+  },
+  {
+    "rel": "child",
+    "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/m10_p90/catalog.json",
+    "type": "application/json",
+    "title": "Cells 10°S–0°, 90°E–100°E"
+  },
+  {
+    "rel": "child",
+    "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/m20_m10/catalog.json",
+    "type": "application/json",
+    "title": "Cells 20°S–10°S, 10°W–0°"
+  },
+  {
+    "rel": "child",
+    "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/m20_m140/catalog.json",
+    "type": "application/json",
+    "title": "Cells 20°S–10°S, 140°W–130°W"
+  },
+  {
+    "rel": "child",
+    "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/m20_m150/catalog.json",
+    "type": "application/json",
+    "title": "Cells 20°S–10°S, 150°W–140°W"
+  },
+  {
+    "rel": "child",
+    "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/m20_m160/catalog.json",
+    "type": "application/json",
+    "title": "Cells 20°S–10°S, 160°W–150°W"
+  },
+  {
+    "rel": "child",
+    "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/m20_m170/catalog.json",
+    "type": "application/json",
+    "title": "Cells 20°S–10°S, 170°W–160°W"
+  },
+  {
+    "rel": "child",
+    "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/m20_m180/catalog.json",
+    "type": "application/json",
+    "title": "Cells 20°S–10°S, 180°W–170°W"
+  },
+  {
+    "rel": "child",
+    "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/m20_m40/catalog.json",
+    "type": "application/json",
+    "title": "Cells 20°S–10°S, 40°W–30°W"
+  },
+  {
+    "rel": "child",
+    "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/m20_m50/catalog.json",
+    "type": "application/json",
+    "title": "Cells 20°S–10°S, 50°W–40°W"
+  },
+  {
+    "rel": "child",
+    "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/m20_m60/catalog.json",
+    "type": "application/json",
+    "title": "Cells 20°S–10°S, 60°W–50°W"
+  },
+  {
+    "rel": "child",
+    "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/m20_m70/catalog.json",
+    "type": "application/json",
+    "title": "Cells 20°S–10°S, 70°W–60°W"
+  },
+  {
+    "rel": "child",
+    "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/m20_m80/catalog.json",
+    "type": "application/json",
+    "title": "Cells 20°S–10°S, 80°W–70°W"
+  },
+  {
+    "rel": "child",
+    "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/m20_p10/catalog.json",
+    "type": "application/json",
+    "title": "Cells 20°S–10°S, 10°E–20°E"
+  },
+  {
+    "rel": "child",
+    "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/m20_p100/catalog.json",
+    "type": "application/json",
+    "title": "Cells 20°S–10°S, 100°E–110°E"
+  },
+  {
+    "rel": "child",
+    "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/m20_p110/catalog.json",
+    "type": "application/json",
+    "title": "Cells 20°S–10°S, 110°E–120°E"
+  },
+  {
+    "rel": "child",
+    "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/m20_p120/catalog.json",
+    "type": "application/json",
+    "title": "Cells 20°S–10°S, 120°E–130°E"
+  },
+  {
+    "rel": "child",
+    "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/m20_p130/catalog.json",
+    "type": "application/json",
+    "title": "Cells 20°S–10°S, 130°E–140°E"
+  },
+  {
+    "rel": "child",
+    "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/m20_p140/catalog.json",
+    "type": "application/json",
+    "title": "Cells 20°S–10°S, 140°E–150°E"
+  },
+  {
+    "rel": "child",
+    "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/m20_p150/catalog.json",
+    "type": "application/json",
+    "title": "Cells 20°S–10°S, 150°E–160°E"
+  },
+  {
+    "rel": "child",
+    "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/m20_p160/catalog.json",
+    "type": "application/json",
+    "title": "Cells 20°S–10°S, 160°E–170°E"
+  },
+  {
+    "rel": "child",
+    "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/m20_p170/catalog.json",
+    "type": "application/json",
+    "title": "Cells 20°S–10°S, 170°E–180°E"
+  },
+  {
+    "rel": "child",
+    "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/m20_p20/catalog.json",
+    "type": "application/json",
+    "title": "Cells 20°S–10°S, 20°E–30°E"
+  },
+  {
+    "rel": "child",
+    "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/m20_p30/catalog.json",
+    "type": "application/json",
+    "title": "Cells 20°S–10°S, 30°E–40°E"
+  },
+  {
+    "rel": "child",
+    "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/m20_p40/catalog.json",
+    "type": "application/json",
+    "title": "Cells 20°S–10°S, 40°E–50°E"
+  },
+  {
+    "rel": "child",
+    "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/m20_p50/catalog.json",
+    "type": "application/json",
+    "title": "Cells 20°S–10°S, 50°E–60°E"
+  },
+  {
+    "rel": "child",
+    "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/m20_p60/catalog.json",
+    "type": "application/json",
+    "title": "Cells 20°S–10°S, 60°E–70°E"
+  },
+  {
+    "rel": "child",
+    "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/m20_p90/catalog.json",
+    "type": "application/json",
+    "title": "Cells 20°S–10°S, 90°E–100°E"
+  },
+  {
+    "rel": "child",
+    "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/m30_m110/catalog.json",
+    "type": "application/json",
+    "title": "Cells 30°S–20°S, 110°W–100°W"
+  },
+  {
+    "rel": "child",
+    "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/m30_m130/catalog.json",
+    "type": "application/json",
+    "title": "Cells 30°S–20°S, 130°W–120°W"
+  },
+  {
+    "rel": "child",
+    "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/m30_m140/catalog.json",
+    "type": "application/json",
+    "title": "Cells 30°S–20°S, 140°W–130°W"
+  },
+  {
+    "rel": "child",
+    "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/m30_m150/catalog.json",
+    "type": "application/json",
+    "title": "Cells 30°S–20°S, 150°W–140°W"
+  },
+  {
+    "rel": "child",
+    "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/m30_m160/catalog.json",
+    "type": "application/json",
+    "title": "Cells 30°S–20°S, 160°W–150°W"
+  },
+  {
+    "rel": "child",
+    "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/m30_m180/catalog.json",
+    "type": "application/json",
+    "title": "Cells 30°S–20°S, 180°W–170°W"
+  },
+  {
+    "rel": "child",
+    "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/m30_m30/catalog.json",
+    "type": "application/json",
+    "title": "Cells 30°S–20°S, 30°W–20°W"
+  },
+  {
+    "rel": "child",
+    "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/m30_m50/catalog.json",
+    "type": "application/json",
+    "title": "Cells 30°S–20°S, 50°W–40°W"
+  },
+  {
+    "rel": "child",
+    "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/m30_m60/catalog.json",
+    "type": "application/json",
+    "title": "Cells 30°S–20°S, 60°W–50°W"
+  },
+  {
+    "rel": "child",
+    "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/m30_m70/catalog.json",
+    "type": "application/json",
+    "title": "Cells 30°S–20°S, 70°W–60°W"
+  },
+  {
+    "rel": "child",
+    "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/m30_m80/catalog.json",
+    "type": "application/json",
+    "title": "Cells 30°S–20°S, 80°W–70°W"
+  },
+  {
+    "rel": "child",
+    "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/m30_m90/catalog.json",
+    "type": "application/json",
+    "title": "Cells 30°S–20°S, 90°W–80°W"
+  },
+  {
+    "rel": "child",
+    "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/m30_p10/catalog.json",
+    "type": "application/json",
+    "title": "Cells 30°S–20°S, 10°E–20°E"
+  },
+  {
+    "rel": "child",
+    "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/m30_p110/catalog.json",
+    "type": "application/json",
+    "title": "Cells 30°S–20°S, 110°E–120°E"
+  },
+  {
+    "rel": "child",
+    "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/m30_p120/catalog.json",
+    "type": "application/json",
+    "title": "Cells 30°S–20°S, 120°E–130°E"
+  },
+  {
+    "rel": "child",
+    "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/m30_p130/catalog.json",
+    "type": "application/json",
+    "title": "Cells 30°S–20°S, 130°E–140°E"
+  },
+  {
+    "rel": "child",
+    "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/m30_p140/catalog.json",
+    "type": "application/json",
+    "title": "Cells 30°S–20°S, 140°E–150°E"
+  },
+  {
+    "rel": "child",
+    "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/m30_p150/catalog.json",
+    "type": "application/json",
+    "title": "Cells 30°S–20°S, 150°E–160°E"
+  },
+  {
+    "rel": "child",
+    "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/m30_p160/catalog.json",
+    "type": "application/json",
+    "title": "Cells 30°S–20°S, 160°E–170°E"
+  },
+  {
+    "rel": "child",
+    "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/m30_p20/catalog.json",
+    "type": "application/json",
+    "title": "Cells 30°S–20°S, 20°E–30°E"
+  },
+  {
+    "rel": "child",
+    "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/m30_p30/catalog.json",
+    "type": "application/json",
+    "title": "Cells 30°S–20°S, 30°E–40°E"
+  },
+  {
+    "rel": "child",
+    "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/m30_p40/catalog.json",
+    "type": "application/json",
+    "title": "Cells 30°S–20°S, 40°E–50°E"
+  },
+  {
+    "rel": "child",
+    "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/m30_p50/catalog.json",
+    "type": "application/json",
+    "title": "Cells 30°S–20°S, 50°E–60°E"
+  },
+  {
+    "rel": "child",
+    "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/m40_m20/catalog.json",
+    "type": "application/json",
+    "title": "Cells 40°S–30°S, 20°W–10°W"
+  },
+  {
+    "rel": "child",
+    "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/m40_m60/catalog.json",
+    "type": "application/json",
+    "title": "Cells 40°S–30°S, 60°W–50°W"
+  },
+  {
+    "rel": "child",
+    "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/m40_m70/catalog.json",
+    "type": "application/json",
+    "title": "Cells 40°S–30°S, 70°W–60°W"
+  },
+  {
+    "rel": "child",
+    "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/m40_m80/catalog.json",
+    "type": "application/json",
+    "title": "Cells 40°S–30°S, 80°W–70°W"
+  },
+  {
+    "rel": "child",
+    "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/m40_p10/catalog.json",
+    "type": "application/json",
+    "title": "Cells 40°S–30°S, 10°E–20°E"
+  },
+  {
+    "rel": "child",
+    "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/m40_p110/catalog.json",
+    "type": "application/json",
+    "title": "Cells 40°S–30°S, 110°E–120°E"
+  },
+  {
+    "rel": "child",
+    "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/m40_p120/catalog.json",
+    "type": "application/json",
+    "title": "Cells 40°S–30°S, 120°E–130°E"
+  },
+  {
+    "rel": "child",
+    "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/m40_p130/catalog.json",
+    "type": "application/json",
+    "title": "Cells 40°S–30°S, 130°E–140°E"
+  },
+  {
+    "rel": "child",
+    "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/m40_p140/catalog.json",
+    "type": "application/json",
+    "title": "Cells 40°S–30°S, 140°E–150°E"
+  },
+  {
+    "rel": "child",
+    "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/m40_p150/catalog.json",
+    "type": "application/json",
+    "title": "Cells 40°S–30°S, 150°E–160°E"
+  },
+  {
+    "rel": "child",
+    "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/m40_p170/catalog.json",
+    "type": "application/json",
+    "title": "Cells 40°S–30°S, 170°E–180°E"
+  },
+  {
+    "rel": "child",
+    "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/m40_p20/catalog.json",
+    "type": "application/json",
+    "title": "Cells 40°S–30°S, 20°E–30°E"
+  },
+  {
+    "rel": "child",
+    "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/m40_p30/catalog.json",
+    "type": "application/json",
+    "title": "Cells 40°S–30°S, 30°E–40°E"
+  },
+  {
+    "rel": "child",
+    "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/m40_p70/catalog.json",
+    "type": "application/json",
+    "title": "Cells 40°S–30°S, 70°E–80°E"
+  },
+  {
+    "rel": "child",
+    "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/m50_m10/catalog.json",
+    "type": "application/json",
+    "title": "Cells 50°S–40°S, 10°W–0°"
+  },
+  {
+    "rel": "child",
+    "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/m50_m20/catalog.json",
+    "type": "application/json",
+    "title": "Cells 50°S–40°S, 20°W–10°W"
+  },
+  {
+    "rel": "child",
+    "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/m50_m70/catalog.json",
+    "type": "application/json",
+    "title": "Cells 50°S–40°S, 70°W–60°W"
+  },
+  {
+    "rel": "child",
+    "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/m50_m80/catalog.json",
+    "type": "application/json",
+    "title": "Cells 50°S–40°S, 80°W–70°W"
+  },
+  {
+    "rel": "child",
+    "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/m50_p140/catalog.json",
+    "type": "application/json",
+    "title": "Cells 50°S–40°S, 140°E–150°E"
+  },
+  {
+    "rel": "child",
+    "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/m50_p160/catalog.json",
+    "type": "application/json",
+    "title": "Cells 50°S–40°S, 160°E–170°E"
+  },
+  {
+    "rel": "child",
+    "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/m50_p170/catalog.json",
+    "type": "application/json",
+    "title": "Cells 50°S–40°S, 170°E–180°E"
+  },
+  {
+    "rel": "child",
+    "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/m50_p30/catalog.json",
+    "type": "application/json",
+    "title": "Cells 50°S–40°S, 30°E–40°E"
+  },
+  {
+    "rel": "child",
+    "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/m50_p50/catalog.json",
+    "type": "application/json",
+    "title": "Cells 50°S–40°S, 50°E–60°E"
+  },
+  {
+    "rel": "child",
+    "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/m50_p60/catalog.json",
+    "type": "application/json",
+    "title": "Cells 50°S–40°S, 60°E–70°E"
+  },
+  {
+    "rel": "child",
+    "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/m50_p70/catalog.json",
+    "type": "application/json",
+    "title": "Cells 50°S–40°S, 70°E–80°E"
+  },
+  {
+    "rel": "child",
+    "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/m60_m30/catalog.json",
+    "type": "application/json",
+    "title": "Cells 60°S–50°S, 30°W–20°W"
+  },
+  {
+    "rel": "child",
+    "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/m60_m40/catalog.json",
+    "type": "application/json",
+    "title": "Cells 60°S–50°S, 40°W–30°W"
+  },
+  {
+    "rel": "child",
+    "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/m60_m60/catalog.json",
+    "type": "application/json",
+    "title": "Cells 60°S–50°S, 60°W–50°W"
+  },
+  {
+    "rel": "child",
+    "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/m60_m70/catalog.json",
+    "type": "application/json",
+    "title": "Cells 60°S–50°S, 70°W–60°W"
+  },
+  {
+    "rel": "child",
+    "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/m60_m80/catalog.json",
+    "type": "application/json",
+    "title": "Cells 60°S–50°S, 80°W–70°W"
+  },
+  {
+    "rel": "child",
+    "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/m60_p0/catalog.json",
+    "type": "application/json",
+    "title": "Cells 60°S–50°S, 0°–10°E"
+  },
+  {
+    "rel": "child",
+    "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/m60_p150/catalog.json",
+    "type": "application/json",
+    "title": "Cells 60°S–50°S, 150°E–160°E"
+  },
+  {
+    "rel": "child",
+    "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/m60_p160/catalog.json",
+    "type": "application/json",
+    "title": "Cells 60°S–50°S, 160°E–170°E"
+  },
+  {
+    "rel": "child",
+    "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/m60_p70/catalog.json",
+    "type": "application/json",
+    "title": "Cells 60°S–50°S, 70°E–80°E"
+  },
+  {
+    "rel": "child",
+    "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/m70_m50/catalog.json",
+    "type": "application/json",
+    "title": "Cells 70°S–60°S, 50°W–40°W"
+  },
+  {
+    "rel": "child",
+    "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p0_m10/catalog.json",
+    "type": "application/json",
+    "title": "Cells 0°–10°N, 10°W–0°"
+  },
+  {
+    "rel": "child",
+    "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p0_m100/catalog.json",
+    "type": "application/json",
+    "title": "Cells 0°–10°N, 100°W–90°W"
+  },
+  {
+    "rel": "child",
+    "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p0_m160/catalog.json",
+    "type": "application/json",
+    "title": "Cells 0°–10°N, 160°W–150°W"
+  },
+  {
+    "rel": "child",
+    "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p0_m170/catalog.json",
+    "type": "application/json",
+    "title": "Cells 0°–10°N, 170°W–160°W"
+  },
+  {
+    "rel": "child",
+    "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p0_m180/catalog.json",
+    "type": "application/json",
+    "title": "Cells 0°–10°N, 180°W–170°W"
+  },
+  {
+    "rel": "child",
+    "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p0_m20/catalog.json",
+    "type": "application/json",
+    "title": "Cells 0°–10°N, 20°W–10°W"
+  },
+  {
+    "rel": "child",
+    "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p0_m50/catalog.json",
+    "type": "application/json",
+    "title": "Cells 0°–10°N, 50°W–40°W"
+  },
+  {
+    "rel": "child",
+    "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p0_m60/catalog.json",
+    "type": "application/json",
+    "title": "Cells 0°–10°N, 60°W–50°W"
+  },
+  {
+    "rel": "child",
+    "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p0_m70/catalog.json",
+    "type": "application/json",
+    "title": "Cells 0°–10°N, 70°W–60°W"
+  },
+  {
+    "rel": "child",
+    "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p0_m80/catalog.json",
+    "type": "application/json",
+    "title": "Cells 0°–10°N, 80°W–70°W"
+  },
+  {
+    "rel": "child",
+    "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p0_m90/catalog.json",
+    "type": "application/json",
+    "title": "Cells 0°–10°N, 90°W–80°W"
+  },
+  {
+    "rel": "child",
+    "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p0_p0/catalog.json",
+    "type": "application/json",
+    "title": "Cells 0°–10°N, 0°–10°E"
+  },
+  {
+    "rel": "child",
+    "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p0_p10/catalog.json",
+    "type": "application/json",
+    "title": "Cells 0°–10°N, 10°E–20°E"
+  },
+  {
+    "rel": "child",
+    "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p0_p100/catalog.json",
+    "type": "application/json",
+    "title": "Cells 0°–10°N, 100°E–110°E"
+  },
+  {
+    "rel": "child",
+    "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p0_p110/catalog.json",
+    "type": "application/json",
+    "title": "Cells 0°–10°N, 110°E–120°E"
+  },
+  {
+    "rel": "child",
+    "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p0_p120/catalog.json",
+    "type": "application/json",
+    "title": "Cells 0°–10°N, 120°E–130°E"
+  },
+  {
+    "rel": "child",
+    "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p0_p130/catalog.json",
+    "type": "application/json",
+    "title": "Cells 0°–10°N, 130°E–140°E"
+  },
+  {
+    "rel": "child",
+    "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p0_p140/catalog.json",
+    "type": "application/json",
+    "title": "Cells 0°–10°N, 140°E–150°E"
+  },
+  {
+    "rel": "child",
+    "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p0_p150/catalog.json",
+    "type": "application/json",
+    "title": "Cells 0°–10°N, 150°E–160°E"
+  },
+  {
+    "rel": "child",
+    "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p0_p160/catalog.json",
+    "type": "application/json",
+    "title": "Cells 0°–10°N, 160°E–170°E"
+  },
+  {
+    "rel": "child",
+    "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p0_p170/catalog.json",
+    "type": "application/json",
+    "title": "Cells 0°–10°N, 170°E–180°E"
+  },
+  {
+    "rel": "child",
+    "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p0_p20/catalog.json",
+    "type": "application/json",
+    "title": "Cells 0°–10°N, 20°E–30°E"
+  },
+  {
+    "rel": "child",
+    "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p0_p30/catalog.json",
+    "type": "application/json",
+    "title": "Cells 0°–10°N, 30°E–40°E"
+  },
+  {
+    "rel": "child",
+    "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p0_p40/catalog.json",
+    "type": "application/json",
+    "title": "Cells 0°–10°N, 40°E–50°E"
+  },
+  {
+    "rel": "child",
+    "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p0_p50/catalog.json",
+    "type": "application/json",
+    "title": "Cells 0°–10°N, 50°E–60°E"
+  },
+  {
+    "rel": "child",
+    "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p0_p70/catalog.json",
+    "type": "application/json",
+    "title": "Cells 0°–10°N, 70°E–80°E"
+  },
+  {
+    "rel": "child",
+    "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p0_p80/catalog.json",
+    "type": "application/json",
+    "title": "Cells 0°–10°N, 80°E–90°E"
+  },
+  {
+    "rel": "child",
+    "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p0_p90/catalog.json",
+    "type": "application/json",
+    "title": "Cells 0°–10°N, 90°E–100°E"
+  },
+  {
+    "rel": "child",
+    "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p10_m10/catalog.json",
+    "type": "application/json",
+    "title": "Cells 10°N–20°N, 10°W–0°"
+  },
+  {
+    "rel": "child",
+    "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p10_m100/catalog.json",
+    "type": "application/json",
+    "title": "Cells 10°N–20°N, 100°W–90°W"
+  },
+  {
+    "rel": "child",
+    "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p10_m110/catalog.json",
+    "type": "application/json",
+    "title": "Cells 10°N–20°N, 110°W–100°W"
+  },
+  {
+    "rel": "child",
+    "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p10_m120/catalog.json",
+    "type": "application/json",
+    "title": "Cells 10°N–20°N, 120°W–110°W"
+  },
+  {
+    "rel": "child",
+    "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p10_m160/catalog.json",
+    "type": "application/json",
+    "title": "Cells 10°N–20°N, 160°W–150°W"
+  },
+  {
+    "rel": "child",
+    "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p10_m170/catalog.json",
+    "type": "application/json",
+    "title": "Cells 10°N–20°N, 170°W–160°W"
+  },
+  {
+    "rel": "child",
+    "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p10_m20/catalog.json",
+    "type": "application/json",
+    "title": "Cells 10°N–20°N, 20°W–10°W"
+  },
+  {
+    "rel": "child",
+    "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p10_m30/catalog.json",
+    "type": "application/json",
+    "title": "Cells 10°N–20°N, 30°W–20°W"
+  },
+  {
+    "rel": "child",
+    "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p10_m60/catalog.json",
+    "type": "application/json",
+    "title": "Cells 10°N–20°N, 60°W–50°W"
+  },
+  {
+    "rel": "child",
+    "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p10_m70/catalog.json",
+    "type": "application/json",
+    "title": "Cells 10°N–20°N, 70°W–60°W"
+  },
+  {
+    "rel": "child",
+    "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p10_m80/catalog.json",
+    "type": "application/json",
+    "title": "Cells 10°N–20°N, 80°W–70°W"
+  },
+  {
+    "rel": "child",
+    "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p10_m90/catalog.json",
+    "type": "application/json",
+    "title": "Cells 10°N–20°N, 90°W–80°W"
+  },
+  {
+    "rel": "child",
+    "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p10_p0/catalog.json",
+    "type": "application/json",
+    "title": "Cells 10°N–20°N, 0°–10°E"
+  },
+  {
+    "rel": "child",
+    "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p10_p10/catalog.json",
+    "type": "application/json",
+    "title": "Cells 10°N–20°N, 10°E–20°E"
+  },
+  {
+    "rel": "child",
+    "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p10_p100/catalog.json",
+    "type": "application/json",
+    "title": "Cells 10°N–20°N, 100°E–110°E"
+  },
+  {
+    "rel": "child",
+    "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p10_p110/catalog.json",
+    "type": "application/json",
+    "title": "Cells 10°N–20°N, 110°E–120°E"
+  },
+  {
+    "rel": "child",
+    "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p10_p120/catalog.json",
+    "type": "application/json",
+    "title": "Cells 10°N–20°N, 120°E–130°E"
+  },
+  {
+    "rel": "child",
+    "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p10_p140/catalog.json",
+    "type": "application/json",
+    "title": "Cells 10°N–20°N, 140°E–150°E"
+  },
+  {
+    "rel": "child",
+    "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p10_p160/catalog.json",
+    "type": "application/json",
+    "title": "Cells 10°N–20°N, 160°E–170°E"
+  },
+  {
+    "rel": "child",
+    "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p10_p20/catalog.json",
+    "type": "application/json",
+    "title": "Cells 10°N–20°N, 20°E–30°E"
+  },
+  {
+    "rel": "child",
+    "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p10_p30/catalog.json",
+    "type": "application/json",
+    "title": "Cells 10°N–20°N, 30°E–40°E"
+  },
+  {
+    "rel": "child",
+    "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p10_p40/catalog.json",
+    "type": "application/json",
+    "title": "Cells 10°N–20°N, 40°E–50°E"
+  },
+  {
+    "rel": "child",
+    "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p10_p50/catalog.json",
+    "type": "application/json",
+    "title": "Cells 10°N–20°N, 50°E–60°E"
+  },
+  {
+    "rel": "child",
+    "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p10_p70/catalog.json",
+    "type": "application/json",
+    "title": "Cells 10°N–20°N, 70°E–80°E"
+  },
+  {
+    "rel": "child",
+    "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p10_p80/catalog.json",
+    "type": "application/json",
+    "title": "Cells 10°N–20°N, 80°E–90°E"
+  },
+  {
+    "rel": "child",
+    "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p10_p90/catalog.json",
+    "type": "application/json",
+    "title": "Cells 10°N–20°N, 90°E–100°E"
+  },
+  {
+    "rel": "child",
+    "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p20_m10/catalog.json",
+    "type": "application/json",
+    "title": "Cells 20°N–30°N, 10°W–0°"
+  },
+  {
+    "rel": "child",
+    "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p20_m100/catalog.json",
+    "type": "application/json",
+    "title": "Cells 20°N–30°N, 100°W–90°W"
+  },
+  {
+    "rel": "child",
+    "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p20_m110/catalog.json",
+    "type": "application/json",
+    "title": "Cells 20°N–30°N, 110°W–100°W"
+  },
+  {
+    "rel": "child",
+    "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p20_m120/catalog.json",
+    "type": "application/json",
+    "title": "Cells 20°N–30°N, 120°W–110°W"
+  },
+  {
+    "rel": "child",
+    "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p20_m160/catalog.json",
+    "type": "application/json",
+    "title": "Cells 20°N–30°N, 160°W–150°W"
+  },
+  {
+    "rel": "child",
+    "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p20_m170/catalog.json",
+    "type": "application/json",
+    "title": "Cells 20°N–30°N, 170°W–160°W"
+  },
+  {
+    "rel": "child",
+    "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p20_m20/catalog.json",
+    "type": "application/json",
+    "title": "Cells 20°N–30°N, 20°W–10°W"
+  },
+  {
+    "rel": "child",
+    "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p20_m80/catalog.json",
+    "type": "application/json",
+    "title": "Cells 20°N–30°N, 80°W–70°W"
+  },
+  {
+    "rel": "child",
+    "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p20_m90/catalog.json",
+    "type": "application/json",
+    "title": "Cells 20°N–30°N, 90°W–80°W"
+  },
+  {
+    "rel": "child",
+    "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p20_p0/catalog.json",
+    "type": "application/json",
+    "title": "Cells 20°N–30°N, 0°–10°E"
+  },
+  {
+    "rel": "child",
+    "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p20_p10/catalog.json",
+    "type": "application/json",
+    "title": "Cells 20°N–30°N, 10°E–20°E"
+  },
+  {
+    "rel": "child",
+    "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p20_p100/catalog.json",
+    "type": "application/json",
+    "title": "Cells 20°N–30°N, 100°E–110°E"
+  },
+  {
+    "rel": "child",
+    "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p20_p110/catalog.json",
+    "type": "application/json",
+    "title": "Cells 20°N–30°N, 110°E–120°E"
+  },
+  {
+    "rel": "child",
+    "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p20_p120/catalog.json",
+    "type": "application/json",
+    "title": "Cells 20°N–30°N, 120°E–130°E"
+  },
+  {
+    "rel": "child",
+    "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p20_p130/catalog.json",
+    "type": "application/json",
+    "title": "Cells 20°N–30°N, 130°E–140°E"
+  },
+  {
+    "rel": "child",
+    "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p20_p140/catalog.json",
+    "type": "application/json",
+    "title": "Cells 20°N–30°N, 140°E–150°E"
+  },
+  {
+    "rel": "child",
+    "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p20_p150/catalog.json",
+    "type": "application/json",
+    "title": "Cells 20°N–30°N, 150°E–160°E"
+  },
+  {
+    "rel": "child",
+    "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p20_p20/catalog.json",
+    "type": "application/json",
+    "title": "Cells 20°N–30°N, 20°E–30°E"
+  },
+  {
+    "rel": "child",
+    "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p20_p30/catalog.json",
+    "type": "application/json",
+    "title": "Cells 20°N–30°N, 30°E–40°E"
+  },
+  {
+    "rel": "child",
+    "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p20_p40/catalog.json",
+    "type": "application/json",
+    "title": "Cells 20°N–30°N, 40°E–50°E"
+  },
+  {
+    "rel": "child",
+    "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p20_p50/catalog.json",
+    "type": "application/json",
+    "title": "Cells 20°N–30°N, 50°E–60°E"
+  },
+  {
+    "rel": "child",
+    "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p20_p60/catalog.json",
+    "type": "application/json",
+    "title": "Cells 20°N–30°N, 60°E–70°E"
+  },
+  {
+    "rel": "child",
+    "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p20_p70/catalog.json",
+    "type": "application/json",
+    "title": "Cells 20°N–30°N, 70°E–80°E"
+  },
+  {
+    "rel": "child",
+    "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p20_p80/catalog.json",
+    "type": "application/json",
+    "title": "Cells 20°N–30°N, 80°E–90°E"
+  },
+  {
+    "rel": "child",
+    "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p20_p90/catalog.json",
+    "type": "application/json",
+    "title": "Cells 20°N–30°N, 90°E–100°E"
+  },
+  {
+    "rel": "child",
+    "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p30_m10/catalog.json",
+    "type": "application/json",
+    "title": "Cells 30°N–40°N, 10°W–0°"
+  },
+  {
+    "rel": "child",
+    "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p30_m100/catalog.json",
+    "type": "application/json",
+    "title": "Cells 30°N–40°N, 100°W–90°W"
+  },
+  {
+    "rel": "child",
+    "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p30_m110/catalog.json",
+    "type": "application/json",
+    "title": "Cells 30°N–40°N, 110°W–100°W"
+  },
+  {
+    "rel": "child",
+    "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p30_m120/catalog.json",
+    "type": "application/json",
+    "title": "Cells 30°N–40°N, 120°W–110°W"
+  },
+  {
+    "rel": "child",
+    "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p30_m130/catalog.json",
+    "type": "application/json",
+    "title": "Cells 30°N–40°N, 130°W–120°W"
+  },
+  {
+    "rel": "child",
+    "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p30_m20/catalog.json",
+    "type": "application/json",
+    "title": "Cells 30°N–40°N, 20°W–10°W"
+  },
+  {
+    "rel": "child",
+    "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p30_m30/catalog.json",
+    "type": "application/json",
+    "title": "Cells 30°N–40°N, 30°W–20°W"
+  },
+  {
+    "rel": "child",
+    "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p30_m40/catalog.json",
+    "type": "application/json",
+    "title": "Cells 30°N–40°N, 40°W–30°W"
+  },
+  {
+    "rel": "child",
+    "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p30_m70/catalog.json",
+    "type": "application/json",
+    "title": "Cells 30°N–40°N, 70°W–60°W"
+  },
+  {
+    "rel": "child",
+    "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p30_m80/catalog.json",
+    "type": "application/json",
+    "title": "Cells 30°N–40°N, 80°W–70°W"
+  },
+  {
+    "rel": "child",
+    "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p30_m90/catalog.json",
+    "type": "application/json",
+    "title": "Cells 30°N–40°N, 90°W–80°W"
+  },
+  {
+    "rel": "child",
+    "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p30_p0/catalog.json",
+    "type": "application/json",
+    "title": "Cells 30°N–40°N, 0°–10°E"
+  },
+  {
+    "rel": "child",
+    "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p30_p10/catalog.json",
+    "type": "application/json",
+    "title": "Cells 30°N–40°N, 10°E–20°E"
+  },
+  {
+    "rel": "child",
+    "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p30_p120/catalog.json",
+    "type": "application/json",
+    "title": "Cells 30°N–40°N, 120°E–130°E"
+  },
+  {
+    "rel": "child",
+    "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p30_p130/catalog.json",
+    "type": "application/json",
+    "title": "Cells 30°N–40°N, 130°E–140°E"
+  },
+  {
+    "rel": "child",
+    "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p30_p140/catalog.json",
+    "type": "application/json",
+    "title": "Cells 30°N–40°N, 140°E–150°E"
+  },
+  {
+    "rel": "child",
+    "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p30_p20/catalog.json",
+    "type": "application/json",
+    "title": "Cells 30°N–40°N, 20°E–30°E"
+  },
+  {
+    "rel": "child",
+    "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p30_p30/catalog.json",
+    "type": "application/json",
+    "title": "Cells 30°N–40°N, 30°E–40°E"
+  },
+  {
+    "rel": "child",
+    "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p30_p40/catalog.json",
+    "type": "application/json",
+    "title": "Cells 30°N–40°N, 40°E–50°E"
+  },
+  {
+    "rel": "child",
+    "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p30_p50/catalog.json",
+    "type": "application/json",
+    "title": "Cells 30°N–40°N, 50°E–60°E"
+  },
+  {
+    "rel": "child",
+    "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p30_p60/catalog.json",
+    "type": "application/json",
+    "title": "Cells 30°N–40°N, 60°E–70°E"
+  },
+  {
+    "rel": "child",
+    "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p30_p70/catalog.json",
+    "type": "application/json",
+    "title": "Cells 30°N–40°N, 70°E–80°E"
+  },
+  {
+    "rel": "child",
+    "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p30_p80/catalog.json",
+    "type": "application/json",
+    "title": "Cells 30°N–40°N, 80°E–90°E"
+  },
+  {
+    "rel": "child",
+    "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p40_m10/catalog.json",
+    "type": "application/json",
+    "title": "Cells 40°N–50°N, 10°W–0°"
+  },
+  {
+    "rel": "child",
+    "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p40_m100/catalog.json",
+    "type": "application/json",
+    "title": "Cells 40°N–50°N, 100°W–90°W"
+  },
+  {
+    "rel": "child",
+    "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p40_m110/catalog.json",
+    "type": "application/json",
+    "title": "Cells 40°N–50°N, 110°W–100°W"
+  },
+  {
+    "rel": "child",
+    "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p40_m120/catalog.json",
+    "type": "application/json",
+    "title": "Cells 40°N–50°N, 120°W–110°W"
+  },
+  {
+    "rel": "child",
+    "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p40_m130/catalog.json",
+    "type": "application/json",
+    "title": "Cells 40°N–50°N, 130°W–120°W"
+  },
+  {
+    "rel": "child",
+    "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p40_m60/catalog.json",
+    "type": "application/json",
+    "title": "Cells 40°N–50°N, 60°W–50°W"
+  },
+  {
+    "rel": "child",
+    "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p40_m70/catalog.json",
+    "type": "application/json",
+    "title": "Cells 40°N–50°N, 70°W–60°W"
+  },
+  {
+    "rel": "child",
+    "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p40_m80/catalog.json",
+    "type": "application/json",
+    "title": "Cells 40°N–50°N, 80°W–70°W"
+  },
+  {
+    "rel": "child",
+    "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p40_m90/catalog.json",
+    "type": "application/json",
+    "title": "Cells 40°N–50°N, 90°W–80°W"
+  },
+  {
+    "rel": "child",
+    "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p40_p0/catalog.json",
+    "type": "application/json",
+    "title": "Cells 40°N–50°N, 0°–10°E"
+  },
+  {
+    "rel": "child",
+    "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p40_p10/catalog.json",
+    "type": "application/json",
+    "title": "Cells 40°N–50°N, 10°E–20°E"
+  },
+  {
+    "rel": "child",
+    "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p40_p130/catalog.json",
+    "type": "application/json",
+    "title": "Cells 40°N–50°N, 130°E–140°E"
+  },
+  {
+    "rel": "child",
+    "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p40_p140/catalog.json",
+    "type": "application/json",
+    "title": "Cells 40°N–50°N, 140°E–150°E"
+  },
+  {
+    "rel": "child",
+    "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p40_p20/catalog.json",
+    "type": "application/json",
+    "title": "Cells 40°N–50°N, 20°E–30°E"
+  },
+  {
+    "rel": "child",
+    "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p40_p30/catalog.json",
+    "type": "application/json",
+    "title": "Cells 40°N–50°N, 30°E–40°E"
+  },
+  {
+    "rel": "child",
+    "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p40_p40/catalog.json",
+    "type": "application/json",
+    "title": "Cells 40°N–50°N, 40°E–50°E"
+  },
+  {
+    "rel": "child",
+    "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p40_p50/catalog.json",
+    "type": "application/json",
+    "title": "Cells 40°N–50°N, 50°E–60°E"
+  },
+  {
+    "rel": "child",
+    "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p40_p60/catalog.json",
+    "type": "application/json",
+    "title": "Cells 40°N–50°N, 60°E–70°E"
+  },
+  {
+    "rel": "child",
+    "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p40_p70/catalog.json",
+    "type": "application/json",
+    "title": "Cells 40°N–50°N, 70°E–80°E"
+  },
+  {
+    "rel": "child",
+    "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p40_p80/catalog.json",
+    "type": "application/json",
+    "title": "Cells 40°N–50°N, 80°E–90°E"
+  },
+  {
+    "rel": "child",
+    "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p50_m10/catalog.json",
+    "type": "application/json",
+    "title": "Cells 50°N–60°N, 10°W–0°"
+  },
+  {
+    "rel": "child",
+    "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p50_m100/catalog.json",
+    "type": "application/json",
+    "title": "Cells 50°N–60°N, 100°W–90°W"
+  },
+  {
+    "rel": "child",
+    "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p50_m110/catalog.json",
+    "type": "application/json",
+    "title": "Cells 50°N–60°N, 110°W–100°W"
+  },
+  {
+    "rel": "child",
+    "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p50_m120/catalog.json",
+    "type": "application/json",
+    "title": "Cells 50°N–60°N, 120°W–110°W"
+  },
+  {
+    "rel": "child",
+    "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p50_m130/catalog.json",
+    "type": "application/json",
+    "title": "Cells 50°N–60°N, 130°W–120°W"
+  },
+  {
+    "rel": "child",
+    "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p50_m140/catalog.json",
+    "type": "application/json",
+    "title": "Cells 50°N–60°N, 140°W–130°W"
+  },
+  {
+    "rel": "child",
+    "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p50_m150/catalog.json",
+    "type": "application/json",
+    "title": "Cells 50°N–60°N, 150°W–140°W"
+  },
+  {
+    "rel": "child",
+    "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p50_m160/catalog.json",
+    "type": "application/json",
+    "title": "Cells 50°N–60°N, 160°W–150°W"
+  },
+  {
+    "rel": "child",
+    "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p50_m170/catalog.json",
+    "type": "application/json",
+    "title": "Cells 50°N–60°N, 170°W–160°W"
+  },
+  {
+    "rel": "child",
+    "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p50_m180/catalog.json",
+    "type": "application/json",
+    "title": "Cells 50°N–60°N, 180°W–170°W"
+  },
+  {
+    "rel": "child",
+    "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p50_m20/catalog.json",
+    "type": "application/json",
+    "title": "Cells 50°N–60°N, 20°W–10°W"
+  },
+  {
+    "rel": "child",
+    "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p50_m60/catalog.json",
+    "type": "application/json",
+    "title": "Cells 50°N–60°N, 60°W–50°W"
+  },
+  {
+    "rel": "child",
+    "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p50_m70/catalog.json",
+    "type": "application/json",
+    "title": "Cells 50°N–60°N, 70°W–60°W"
+  },
+  {
+    "rel": "child",
+    "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p50_m80/catalog.json",
+    "type": "application/json",
+    "title": "Cells 50°N–60°N, 80°W–70°W"
+  },
+  {
+    "rel": "child",
+    "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p50_m90/catalog.json",
+    "type": "application/json",
+    "title": "Cells 50°N–60°N, 90°W–80°W"
+  },
+  {
+    "rel": "child",
+    "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p50_p0/catalog.json",
+    "type": "application/json",
+    "title": "Cells 50°N–60°N, 0°–10°E"
+  },
+  {
+    "rel": "child",
+    "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p50_p10/catalog.json",
+    "type": "application/json",
+    "title": "Cells 50°N–60°N, 10°E–20°E"
+  },
+  {
+    "rel": "child",
+    "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p50_p170/catalog.json",
+    "type": "application/json",
+    "title": "Cells 50°N–60°N, 170°E–180°E"
+  },
+  {
+    "rel": "child",
+    "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p50_p20/catalog.json",
+    "type": "application/json",
+    "title": "Cells 50°N–60°N, 20°E–30°E"
+  },
+  {
+    "rel": "child",
+    "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p50_p30/catalog.json",
+    "type": "application/json",
+    "title": "Cells 50°N–60°N, 30°E–40°E"
+  },
+  {
+    "rel": "child",
+    "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p50_p40/catalog.json",
+    "type": "application/json",
+    "title": "Cells 50°N–60°N, 40°E–50°E"
+  },
+  {
+    "rel": "child",
+    "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p50_p50/catalog.json",
+    "type": "application/json",
+    "title": "Cells 50°N–60°N, 50°E–60°E"
+  },
+  {
+    "rel": "child",
+    "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p50_p60/catalog.json",
+    "type": "application/json",
+    "title": "Cells 50°N–60°N, 60°E–70°E"
+  },
+  {
+    "rel": "child",
+    "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p50_p70/catalog.json",
+    "type": "application/json",
+    "title": "Cells 50°N–60°N, 70°E–80°E"
+  },
+  {
+    "rel": "child",
+    "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p50_p80/catalog.json",
+    "type": "application/json",
+    "title": "Cells 50°N–60°N, 80°E–90°E"
+  },
+  {
+    "rel": "child",
+    "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p60_m10/catalog.json",
+    "type": "application/json",
+    "title": "Cells 60°N–70°N, 10°W–0°"
+  },
+  {
+    "rel": "child",
+    "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p60_m100/catalog.json",
+    "type": "application/json",
+    "title": "Cells 60°N–70°N, 100°W–90°W"
+  },
+  {
+    "rel": "child",
+    "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p60_m110/catalog.json",
+    "type": "application/json",
+    "title": "Cells 60°N–70°N, 110°W–100°W"
+  },
+  {
+    "rel": "child",
+    "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p60_m120/catalog.json",
+    "type": "application/json",
+    "title": "Cells 60°N–70°N, 120°W–110°W"
+  },
+  {
+    "rel": "child",
+    "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p60_m130/catalog.json",
+    "type": "application/json",
+    "title": "Cells 60°N–70°N, 130°W–120°W"
+  },
+  {
+    "rel": "child",
+    "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p60_m140/catalog.json",
+    "type": "application/json",
+    "title": "Cells 60°N–70°N, 140°W–130°W"
+  },
+  {
+    "rel": "child",
+    "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p60_m150/catalog.json",
+    "type": "application/json",
+    "title": "Cells 60°N–70°N, 150°W–140°W"
+  },
+  {
+    "rel": "child",
+    "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p60_m160/catalog.json",
+    "type": "application/json",
+    "title": "Cells 60°N–70°N, 160°W–150°W"
+  },
+  {
+    "rel": "child",
+    "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p60_m170/catalog.json",
+    "type": "application/json",
+    "title": "Cells 60°N–70°N, 170°W–160°W"
+  },
+  {
+    "rel": "child",
+    "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p60_m180/catalog.json",
+    "type": "application/json",
+    "title": "Cells 60°N–70°N, 180°W–170°W"
+  },
+  {
+    "rel": "child",
+    "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p60_m20/catalog.json",
+    "type": "application/json",
+    "title": "Cells 60°N–70°N, 20°W–10°W"
+  },
+  {
+    "rel": "child",
+    "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p60_m30/catalog.json",
+    "type": "application/json",
+    "title": "Cells 60°N–70°N, 30°W–20°W"
+  },
+  {
+    "rel": "child",
+    "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p60_m70/catalog.json",
+    "type": "application/json",
+    "title": "Cells 60°N–70°N, 70°W–60°W"
+  },
+  {
+    "rel": "child",
+    "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p60_m80/catalog.json",
+    "type": "application/json",
+    "title": "Cells 60°N–70°N, 80°W–70°W"
+  },
+  {
+    "rel": "child",
+    "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p60_m90/catalog.json",
+    "type": "application/json",
+    "title": "Cells 60°N–70°N, 90°W–80°W"
+  },
+  {
+    "rel": "child",
+    "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p60_p0/catalog.json",
+    "type": "application/json",
+    "title": "Cells 60°N–70°N, 0°–10°E"
+  },
+  {
+    "rel": "child",
+    "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p60_p10/catalog.json",
+    "type": "application/json",
+    "title": "Cells 60°N–70°N, 10°E–20°E"
+  },
+  {
+    "rel": "child",
+    "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p60_p20/catalog.json",
+    "type": "application/json",
+    "title": "Cells 60°N–70°N, 20°E–30°E"
+  },
+  {
+    "rel": "child",
+    "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p60_p30/catalog.json",
+    "type": "application/json",
+    "title": "Cells 60°N–70°N, 30°E–40°E"
+  },
+  {
+    "rel": "child",
+    "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p70_m100/catalog.json",
+    "type": "application/json",
+    "title": "Cells 70°N–80°N, 100°W–90°W"
+  },
+  {
+    "rel": "child",
+    "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p70_m110/catalog.json",
+    "type": "application/json",
+    "title": "Cells 70°N–80°N, 110°W–100°W"
+  },
+  {
+    "rel": "child",
+    "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p70_m120/catalog.json",
+    "type": "application/json",
+    "title": "Cells 70°N–80°N, 120°W–110°W"
+  },
+  {
+    "rel": "child",
+    "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p70_m130/catalog.json",
+    "type": "application/json",
+    "title": "Cells 70°N–80°N, 130°W–120°W"
+  },
+  {
+    "rel": "child",
+    "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p70_m140/catalog.json",
+    "type": "application/json",
+    "title": "Cells 70°N–80°N, 140°W–130°W"
+  },
+  {
+    "rel": "child",
+    "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p70_m150/catalog.json",
+    "type": "application/json",
+    "title": "Cells 70°N–80°N, 150°W–140°W"
+  },
+  {
+    "rel": "child",
+    "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p70_m160/catalog.json",
+    "type": "application/json",
+    "title": "Cells 70°N–80°N, 160°W–150°W"
+  },
+  {
+    "rel": "child",
+    "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p70_m170/catalog.json",
+    "type": "application/json",
+    "title": "Cells 70°N–80°N, 170°W–160°W"
+  },
+  {
+    "rel": "child",
+    "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p70_m70/catalog.json",
+    "type": "application/json",
+    "title": "Cells 70°N–80°N, 70°W–60°W"
+  },
+  {
+    "rel": "child",
+    "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p70_m80/catalog.json",
+    "type": "application/json",
+    "title": "Cells 70°N–80°N, 80°W–70°W"
+  },
+  {
+    "rel": "child",
+    "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p70_m90/catalog.json",
+    "type": "application/json",
+    "title": "Cells 70°N–80°N, 90°W–80°W"
+  },
+  {
+    "rel": "child",
+    "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p70_p10/catalog.json",
+    "type": "application/json",
+    "title": "Cells 70°N–80°N, 10°E–20°E"
+  },
+  {
+    "rel": "child",
+    "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p70_p20/catalog.json",
+    "type": "application/json",
+    "title": "Cells 70°N–80°N, 20°E–30°E"
+  },
+  {
+    "rel": "child",
+    "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p70_p30/catalog.json",
+    "type": "application/json",
+    "title": "Cells 70°N–80°N, 30°E–40°E"
+  },
+  {
+    "rel": "child",
+    "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p80_m100/catalog.json",
+    "type": "application/json",
+    "title": "Cells 80°N–90°N, 100°W–90°W"
+  },
+  {
+    "rel": "child",
+    "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p80_m70/catalog.json",
+    "type": "application/json",
+    "title": "Cells 80°N–90°N, 70°W–60°W"
+  },
+  {
+    "rel": "child",
+    "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p80_m80/catalog.json",
+    "type": "application/json",
+    "title": "Cells 80°N–90°N, 80°W–70°W"
+  },
+  {
+    "rel": "child",
+    "href": "https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/p80_m90/catalog.json",
+    "type": "application/json",
+    "title": "Cells 80°N–90°N, 90°W–80°W"
+  }
+]
