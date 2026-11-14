@@ -103,6 +103,55 @@ section, or run every aws/boto3 invocation (including `publish.py` and
 `upload_data.py`) with `AWS_SHARED_CREDENTIALS_FILE=/dev/null` in the
 environment.
 
+### Compute: this is a Slurm cluster, not a login-node shell
+
+"rails" is a Slurm cluster. Every heavy step (steps 1-4 below) runs via
+`sbatch` on a compute node, not interactively on the login node: the login
+node has a 64 GiB cgroup `memory.max` (confirmed the hard way -- this is
+exactly the kind of cap the pre-patch `build_terrain.py` hit at 60 GiB,
+before the memory fixes in step 3 below), and its job is submitting jobs,
+not running them.
+
+Partition `cpu_amd`: 112-128 cores, 251-257 GB RAM per node, 1.5 TB
+node-local NVMe at `/tmp`, `MaxTime` 7 days. Recommended shape for the
+terrain build (step 3), which is both the most CPU-parallel step and the
+one with a real local-disk I/O argument for node-local scratch:
+
+```bash
+sbatch --partition=cpu_amd --nodes=1 --cpus-per-task=64 --mem=128G \
+  --time=2-00:00:00 --job-name=gem15-terrain <<'EOF'
+#!/bin/bash
+set -euo pipefail
+SCRATCH="/tmp/gem15-build-${SLURM_JOB_ID}"
+trap 'rm -rf "$SCRATCH"' EXIT
+mkdir -p "$SCRATCH"
+
+python3 tools/build_terrain.py --band dsm --minzoom 0 --maxzoom 13 \
+  --workers 64 --db-path "$SCRATCH" \
+  --output staging/publish/gem-15/terrain/gem-15-dsm-terrarium.pmtiles
+
+# --output above already wrote the final .pmtiles to shared/network
+# storage directly (that write is a single sequential pass at the very
+# end, not the random-access inserts --db-path was for); only the
+# intermediate MBTiles + WAL/SHM lived in $SCRATCH, and the trap above
+# cleans them up whether the build succeeds or fails. If the operator's
+# site instead wants the MBTiles itself preserved (e.g. to resume a run
+# across jobs without redoing a partial zoom), rsync it off $SCRATCH
+# before this script exits and point the next job's --db-path at a
+# restored copy, not at a fresh empty one.
+EOF
+```
+
+64 cores comfortably covers `--workers 64` for the fetch stage plus
+`--encode-workers 64` (the default, same as `--workers`) for the separate
+encode pool running concurrently; 128 GB covers the bounded in-flight
+window (`--window-multiplier`, default 2x workers -- see step 3) at z13's
+measured 139-199 MB per in-flight cell. Measured GCS throughput from a
+compute node: **~325 MB/s over 4 concurrent streams** -- scale
+`--workers` down from 64 if this saturates before the CPU does; the fetch
+stage is network-bound, not CPU-bound, so more workers past that point
+buys nothing.
+
 ## 1. `items.parquet`
 
 ```bash
@@ -182,117 +231,179 @@ cell.
 
 ```bash
 python3 tools/build_terrain.py --band dsm --minzoom 0 --maxzoom 13 \
-  --workers 16 \
+  --workers 64 --db-path "$SCRATCH" \
   --output staging/publish/gem-15/terrain/gem-15-dsm-terrarium.pmtiles
 ```
 
-This is the expensive one. Read `tools/build_terrain.py`'s module docstring
-for the algorithm (one warp per cell per zoom, snapped to the tile grid, not
-one warp per tile; exact-completion compositing across cells sharing a
-tile). The honest cost driver, worked out from GDAL's own overview-selection
-rule (pick the finest overview whose resolution is still <= the zoom's
-target resolution) against the DSM COGs' actual overview ladder
-(15/30/60/120/240/480 m):
+(run inside the sbatch shape in "Compute" above, not interactively). This
+is the expensive step, and the one the first attempt at it on the real
+cluster found three serious defects in -- all three are fixed as of this
+revision of `tools/build_terrain.py`; read its module docstring for the
+full design, this section is the operational summary and the honest cost
+estimate.
 
-| zoom | target res (m/px) | overview GDAL reads | est. bytes/cell | est. total (x13,485 cells) |
-|---|---|---|---|---|
-| 13 | ~19.1 | **native (15 m)** | ~142 MB | **~1.9 TB** |
-| 12 | ~38.2 | 30 m | ~36 MB | ~480 GB |
-| 11 | ~76.4 | 60 m | ~9 MB | ~120 GB |
-| 10 | ~152.9 | 120 m | ~2.2 MB | ~30 GB |
-| 9 | ~305.7 | 240 m | ~0.56 MB | ~7.5 GB |
-| 0-8 | >=~611 | 480 m (same level, read once per zoom) | ~0.14 MB | ~17 GB (9 zooms combined) |
+### What the real run found, and what changed
 
-**Total estimated egress: roughly 2.5-3 TB**, derived from the per-cell
-`dsm/zall/mosaic.tif` `file:size` values already visible in the upstream
-item JSON (e.g. 199,399,399 bytes for `wm91sm1`), apportioned across overview
-levels by pixel count (native/30/60/120/240/480 m have 1, 1/4, 1/16, 1/64,
-1/256, 1/1024 as many pixels respectively) since the DSM COG is
-pixel-interleaved across its 5 bands, so reading "band 1 only" at a given
-level still costs that level's full tile bytes. **z13 alone is most of the
-cost** because 19.1 m/px falls between the 15 m native level and the 30 m
-overview, so GDAL has no choice but to read full-resolution data for every
-cell.
+1. **P0: a transient fetch failure permanently baked in false ocean.**
+   The real run hit transient GCS failures (`HTTP response code: 0`). The
+   original code treated a failed cell open/warp/read exactly like a cell
+   with no data at all -- its tiles got finalized as 0 m and marked done,
+   and a rerun would never revisit them (they were, as far as the MBTiles
+   was concerned, finished). **Fixed**: a cell's tiles are only ever
+   decremented toward "done" on a *successful* fetch; a failed cell (after
+   `CELL_READ_ATTEMPTS` in-process retries, on top of GDAL's own HTTP-layer
+   retry -- see `VSICURL_ENV`'s `GDAL_HTTP_MAX_RETRY`/`RETRY_DELAY`, which
+   alone eliminated every transient failure on the real restart) simply
+   leaves its tiles unfinished; there is no more "finalize whatever's left
+   over" sweep at the end of a zoom, which is exactly what used to turn a
+   transient failure into permanent wrong data. **Verified** (not just
+   argued): a cell pointed at a nonexistent host left its 36 tiles
+   completely absent from the MBTiles; rerunning with the real URL
+   completed all 36 without redoing anything else.
+2. **Memory blowup.** All of a zoom's cell fetches were submitted to the
+   thread pool at once; each result held 139-199 MB (measured at z13), and
+   the single thread doing all the compositing+encoding ran 3-7x behind the
+   producers, growing RSS ~23 MB/s until a 60 GiB cgroup cap killed the
+   job (measured; this is also why the login node's 64 GiB cap in
+   "Compute" above is worth knowing about independently). **Fixed**: a
+   bounded in-flight window (`--window-multiplier`, default 2x
+   `--workers`) caps how many cell results can be waiting at once, and PNG
+   /terrarium encoding moved to its own thread pool (`--encode-workers`,
+   default = `--workers`) instead of running inline on the thread also
+   doing compositing and submitting fetches -- Pillow's PNG encoder
+   releases the GIL during the actual compression, so a thread pool (not a
+   process pool, which would add numpy-array pickling for no benefit)
+   genuinely parallelizes it.
+3. **A kill lost everything since the last zoom boundary.** The only
+   `conn.commit()` was once per zoom; two separate kills on the real run
+   rolled back 2.8 GB and 927 MB respectively. **Fixed**: WAL journal mode
+   + `synchronous=NORMAL`, and a commit every `--commit-every-tiles`
+   (default 20,000) or `--commit-every-seconds` (default 60), whichever
+   comes first. **Verified**: built z12 across the Barcelona bbox with
+   `--commit-every-tiles 20`, `kill -9`'d the process mid-zoom, and found
+   301 of 740 tiles already durable in the MBTiles; a rerun resumed from
+   exactly that point and reached the full 740 without redoing them.
+4. **Duplicate metadata rows on every rerun.** The `metadata` table had no
+   `PRIMARY KEY`, so `INSERT OR REPLACE` had nothing to conflict on.
+   **Fixed**: the table is now created with `PRIMARY KEY(name)`; an
+   existing database from an older version of this script is migrated
+   (deduplicated, keeping the latest value per name) the first time it is
+   opened by this version.
 
-At a sustained 125-625 MB/s from GCS (typical range for a well-provisioned
-server; validate against your actual link), that is very roughly
-**1.5-6 hours of wall-clock time**, dominated by network I/O rather than
-CPU. This has not been measured end to end -- only the mechanism (one cell
-at a time, per zoom) and the per-level byte accounting above are verified.
-Run `z13` on its own first and time it before committing to the full range.
+### `--overview-mode`: average (new default) vs. rewarp (the original design)
 
-**Known, deliberately accepted inefficiency:** zooms 0-8 all resolve to the
-*same* 480 m overview per cell, but each zoom re-reads it independently
-(the script does not share reads across zooms within a cell). At ~17 GB
-total this is small next to z13's ~1.9 TB and was not worth the extra
-complexity of a shared per-cell cache across zooms -- revisit if z0-z8 ever
-becomes the bottleneck.
+The original design re-warped every zoom independently from source --
+correct, but it is why the egress estimate below is so large: z13's
+~19.1 m/px falls between the 15 m native level and the 30 m overview, so
+*every* zoom down to z9 still reads a large fraction of full-resolution
+data per cell (see the table). `--overview-mode average` (the default now)
+warps only `--maxzoom` from source, then derives every shallower zoom by
+NaN-aware 2x2 box-averaging the zoom one level deeper, already sitting in
+the working MBTiles -- no further source reads. `--overview-mode rewarp`
+keeps the original behavior as an A/B option.
 
-**Memory:** `build_terrain.py`'s compositing holds an upfront "tiles
-remaining" count for every tile at the current zoom (see its docstring).
-At z13 globally this is tens of millions of entries -- budget for it (a
-machine with tens of GB of RAM handles this comfortably; a laptop does
-not). Zooms are processed and freed one at a time, so this is the per-zoom
-peak, not a running total across zooms.
+Box-averaging needs each tile's real pre-fill void mask (not just its
+already-0-filled elevation) to average correctly across a coastline or a
+masked-water edge without a void pixel incorrectly dragging a real one
+toward 0; this is stored per-tile as a packed-bit mask in a new
+`void_masks` table (8192 bytes/tile), written for *every* tile regardless
+of mode.
 
-**Resumability:** tile-level, via the intermediate MBTiles
-(`staging/publish/gem-15/terrain/gem-15-dsm-terrarium.mbtiles`, kept after
-the build). A tile is written to it only once every contributing cell has
-reported in, so a crash never leaves a half-composited tile marked done;
-rerunning the same command skips every zoom/tile already present and
-redoes only the incomplete frontier. `pmtiles convert --force` at the end
-always regenerates the final `.pmtiles` from the current MBTiles state, so
-it is safe to re-run that whole command repeatedly as the MBTiles fills in.
+**Per-zoom vertical quantization** (Mapterhorn's technique, see the module
+docstring's step table: 1 m at z0-z11, 0.5 m at z12, 0.25 m at z13) runs in
+both modes before encoding, `--no-quantize` to disable. **Measured** on a
+single cell (w2s41) at z10-z13: 26.27 MB quantized vs. 54.45 MB
+unquantized, **-51.75%** -- close to the -54.7% the operator measured on
+the actual Barcelona demo archive; the gap is just that this was one
+cell, not the whole demo bbox.
 
-**Smoke-tested:** `--cells wm91sm1 --minzoom 0 --maxzoom 11 --verify`
-(`staging/smoke/terrain-sample.pmtiles`): 58 tiles built, all 12 per-zoom
-`--verify` checks (z0-z11) passed. `pmtiles show` round-tripped the metadata
-including the non-standard `encoding: terrarium` key, and a rerun of the
-identical command correctly reported "nothing to do" at every zoom.
+**Average vs. rewarp agreement, measured** (not assumed): built both modes
+over the same single cell (w2s41) at z10-z13 and diffed every tile.
+Edge tiles (a single-cell build's own boundary, where a neighboring cell's
+contribution is simply absent -- see "Sharded runs" below) disagree far
+more than interior ones and are not representative of a real, unrestricted
+build; filtering to interior tiles only, max |average - rewarp| as a
+fraction of each zoom's resolution: z12 (one level below maxzoom) up to
+69% (mean ~25%), z11 up to 18% (mean ~9%), z10 up to 11% (mean ~9%).
+Disagreement is largest immediately below `--maxzoom`, where the box mean
+is averaging full-detail z13 data against a single bilinear point-sample
+of that same area; it shrinks at shallower zooms because both methods are
+by then looking at data the average chain has already smoothed once. This
+is why `--verify`'s tolerance for a derived tile
+(`RELATIVE_TOLERANCE_AVERAGED` in `tools/build_terrain.py`, 15%) is wider
+than for a rewarped one (`RELATIVE_TOLERANCE`, 2%) -- it is a different,
+legitimate resampling philosophy, not a bug, and the full numbers above are
+in that constant's own comment. z13 itself is bit-identical between modes
+in this test (0.000 m), as it should be: both modes build it the same way.
 
-`verify_mbtiles_tile` went through two real bug fixes during development,
-both found by this smoke test, not assumed away:
+### Egress and time estimate (average mode; still an estimate)
 
-1. **Sampling bug (z0-z6 false failures):** the first version compared a
-   fixed grid of sample points across the whole 256x256 tile. At shallow
-   zooms a tile can span tens of degrees while the one cell contributing to
-   it is still 1x1 degree, so the grid landed entirely outside the cell's
-   tiny footprint, found zero valid samples, and then wrongly asserted the
-   *whole* tile must be a 0-filled void -- flagging the tile's real,
-   correctly-encoded land pixels as 94-726 m "errors" even though they
-   decoded correctly. Fixed by enumerating every real-data pixel the
-   independent re-warp actually has (`np.argwhere(~np.isnan(ref))`) instead
-   of guessing where they might be, and only asserting "void" when that set
-   is genuinely empty. Confirmed fixed: z0-z2 now correctly report "no
-   source data" (this cell really is sub-pixel at those zooms) and z3-z10
-   report real sample counts (2 to several thousand) with all passing.
-2. **Warp-chunking sensitivity (a real, inherent limitation, not a bug):**
-   with real samples flowing, z9 still read up to ~3.8 m off on a few
-   pixels found to sit on a crater rim on the volcanic island inside this
-   cell, several pixels from any nodata. Traced to GDAL's bilinear
-   resampler picking its source kernel radius from an internally-chunked
-   estimate of the local scale ratio, which can differ slightly between
-   this check's single-tile warp and the real build's per-cell combined-
-   block warp even when both compute the *exact* same destination pixel
-   coordinate (confirmed: their geotransforms agreed to ~1e-9 m). This
-   shows up only where terrain is steep and decimation is heavy (z9 is 20x
-   decimation from native 15 m), and there is no single "correct" bilinear
-   value to adjudicate between two equally legitimate warps in that
-   regime. Fixed by scaling the tolerance to the zoom's own resolution
-   (2%, `RELATIVE_TOLERANCE` in `tools/build_terrain.py`) rather than
-   trying to exclude the responsible pixels, which chasing it with two
-   different pixel-exclusion heuristics (nodata-adjacency erosion, then a
-   3x3-neighborhood relief filter) failed to fully eliminate.
+Average mode reads source only at `--maxzoom`. Reusing the original
+rewarp-mode accounting (worked out from GDAL's overview-selection rule --
+pick the finest overview whose resolution is still <= the zoom's target --
+against the DSM COGs' 15/30/60/120/240/480 m overview ladder, apportioned
+by pixel count from the real per-cell `file:size` values in the upstream
+item JSON, e.g. 199,399,399 bytes for `wm91sm1`), z13 alone is **~1.9 TB**
+of the previous ~2.5-3 TB rewarp-mode total -- average mode's total egress
+*is* that ~1.9 TB, since nothing else reads source. (This is a ~35-45%
+egress reduction over the old all-zooms design, concentrated entirely in
+not re-reading zooms 0-12; it is not the "~4x" figure floated before any
+of this was measured -- correcting that here rather than repeating it.)
 
-**This still catches real mismatches**, verified directly rather than
-assumed: a tile's elevation was decoded, perturbed by a deliberate, large,
-wrong offset (+500 m, simulating e.g. a dropped `+32768` or wrong band), re
--encoded, and written back into the MBTiles; `verify_mbtiles_tile` on that
-tile correctly reported `FAIL` (500.0000 m vs. a 12.23 m tolerance at that
-zoom), against the same tile passing before the perturbation. A tolerance
-scaled to 2% of resolution only ever reaches a few meters to a couple dozen
-meters even at the shallowest zooms -- nowhere near large enough to also
-pass a genuine encoding bug, which misses by orders of magnitude more.
+At the cluster's measured ~325 MB/s over 4 streams (see "Compute" above),
+that is very roughly **1.6-2 hours** for the z13 fetch+warp stage alone.
+Deriving z0-z12 from z13 is local-disk-bound, not network-bound (see the
+derivation timings in the smoke test below: hundreds of tiles/second on a
+laptop), so it adds minutes, not hours, on a 64-core node. **Overall
+estimate: ~2-3 hours for the full z0-z13 global build on one
+`cpu_amd` node** -- still an estimate, now a better-grounded one than the
+pre-patch 1.5-6 hours, and still pending the operator's own timing pass on
+the real cluster with the patched code.
+
+**Memory:** the per-zoom "tiles remaining" count (`--maxzoom`'s rewarp
+stage) and the fetch window (2x `--workers` in-flight cell results, each
+139-199 MB at z13) are the two real costs; derivation reads small (256x256)
+tiles from local SQLite and is not a memory concern. 128 GB (the sbatch
+shape above) is generous headroom for both at `--workers 64`.
+
+**Resumability**, now accurate post-patch: every `--commit-every-tiles`/
+`--commit-every-seconds` commit is durable (not just once per zoom), a
+failed cell's tiles are never falsely finalized (see defect 1 above), and
+`existing_tiles_for_zoom` means a rerun only ever redoes what is actually
+missing -- at the tile level for the rewarp stage, and at the derived-tile
+level for every shallower zoom in average mode. `pmtiles convert --force`
+at the end always regenerates the final `.pmtiles` from the MBTiles'
+current state.
+
+### Smoke-tested
+
+`--cells wm91sm1 --minzoom 0 --maxzoom 11 --verify`
+(`staging/smoke/terrain-sample.pmtiles`): 58 tiles built (average mode,
+quantized), every zoom's `--verify` check passed, `pmtiles show`
+round-tripped metadata including `encoding: terrarium` and the new
+`overview_mode` key, and a rerun correctly reported "nothing to do" (the
+rewarp zoom) / "nothing to derive" (every shallower zoom) everywhere.
+
+`verify_mbtiles_tile` also needed two fixes of its own during development
+(both on the original rewarp-only design, both still in effect): a sampling
+bug where a fixed grid of points could miss a cell's tiny footprint inside
+a much larger shallow-zoom tile and wrongly conclude "no data anywhere,
+must be void" (fixed: enumerate every real-data pixel the reference warp
+actually has, instead of guessing where they are), and a GDAL
+warp-chunking sensitivity where two independently-issued bilinear warps of
+the same steep-terrain pixel can legitimately disagree by a few meters with
+neither one wrong (fixed: scale the tolerance to each zoom's own
+resolution, `RELATIVE_TOLERANCE`). Both are documented at length in
+`verify_mbtiles_tile`'s own docstring and comments.
+
+**This still catches real mismatches**, verified directly: a tile's
+elevation was decoded, perturbed by a deliberate +500 m offset (simulating
+e.g. a dropped `+32768` or wrong band), re-encoded, and written back;
+`verify_mbtiles_tile` correctly reported `FAIL` against the same tile
+passing before the perturbation. The scaled tolerances above only ever
+reach a few meters to tens of meters even at the shallowest/coarsest
+zooms -- nowhere near large enough to also pass a genuine encoding bug,
+which misses by orders of magnitude more.
 
 ### DTM terrain (optional, not in the published asset contract yet)
 
@@ -325,6 +436,18 @@ unscaled 1 m default tolerance, consistent with this being a land-rich
 area with plenty of interior, non-steep pixels at every zoom (unlike the
 wm91sm1 smoke-test cell, which is why wm91sm1 found the sampling and
 warp-chunking issues described in step 3 and this real-world run did not).
+
+**That measured run predates this revision of `build_terrain.py`** (it
+used the original rewarp-only design, no quantization, no `void_masks`,
+none of step 3's P0 fixes). It is still live and still correct -- nothing
+above suggests its bytes are wrong -- but a rebuild with the current
+script would both apply quantization (measured -51.75% on a single cell in
+step 3; expect a similarly large reduction here) and default to
+`--overview-mode average`, reading source only at `--maxzoom` (14 for this
+file, not 13) instead of at every zoom from 0 to 14. Worth doing before
+the global build if this demo's size/egress matters on its own, but not
+required: this is a judgment call for whoever runs it, not a correction to
+anything already published.
 
 ## 5. Thumbnail (committed to git, not staged)
 
@@ -436,7 +559,7 @@ BBOX=-9.5,36.0,3.5,43.8
 
 python3 tools/build_overview.py --bbox $BBOX --workers 16
 python3 tools/build_terrain.py --band dsm --minzoom 0 --maxzoom 13 --bbox $BBOX \
-  --output staging/publish/gem-15/terrain/gem-15-dsm-terrarium.pmtiles
+  --output /tmp/country-dryrun-dsm-terrarium.pmtiles
 ```
 
 `build_items_parquet.py` has no `--bbox` (it always builds the full item
@@ -445,9 +568,26 @@ scope-selection logic for); use `--limit` for a quick sanity run instead.
 There is no country filter for `build_thumbnail.py` either -- it always
 renders the fixed Barcelona demo area.
 
-A country-scale `--bbox` run shares the same resumable caches
-(`staging/cache/`) as the global run: cells inside the bbox that a country
-run already fetched/rendered are not re-fetched when a later, unrestricted
-global run reaches them. Running a country first is a legitimate way to
-warm the cache and sanity-check output before paying for the global
-egress estimated in step 3.
+**For `build_terrain.py` specifically, a `--bbox`/`--cells` run is a
+standalone dry run only -- never point it at the paths a global run will
+also use.** (An earlier version of this appendix said the opposite --
+that a country run was "a legitimate way to warm the cache" for the global
+one -- which is wrong and has been corrected here.) Adjacent cells can
+share up to 23 z13 tiles across a single 1-degree boundary; a sharded
+run's own boundary tiles get finalized using only the cells it was given,
+permanently baking in 0 m for a neighbor that a global run would have
+supplied, and a later global run sees those tiles as already done and
+skips them. This was found by direct measurement while validating this
+revision of the script (see step 3's "average vs. rewarp agreement"): a
+single-cell build's edge tiles disagreed with an independent reference by
+far more than its interior tiles, for exactly this reason. `--output`
+above is deliberately `/tmp`, not `staging/publish/...`, to make that
+boundary obvious; the example command's own `$BBOX` run is fine to repeat
+or discard freely, just never reuse its `.mbtiles`/`.pmtiles` as a
+starting point for the real build.
+
+`build_overview.py` and `build_items_parquet.py` have no such hazard (an
+overview tile's cells mosaic independently with no cross-cell
+compositing, and the item index has no spatial compositing at all), and
+both still share the resumable `staging/cache/` item/group-catalog cache
+with a later global run regardless of `--bbox`.

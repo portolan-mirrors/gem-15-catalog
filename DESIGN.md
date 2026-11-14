@@ -144,6 +144,41 @@ Record exact commands in `processing:lineage` on the asset and in AGENTS.md.
 - Upstream STAC is 1.0.0; items carry `raster:bands` (not STAC 1.1 `bands`).
 - India intentionally offset; Russia/China/Mongolia/Greenland excluded; ~2.5 %
   of cells masked; DTM weaker under dense canopy (see paper notes).
+- **Masked water bodies render as 0 m pits in 3D terrain, with visibly
+  striped/comb walls.** Investigated 2026-11-14 after a user-reported "hole"
+  northwest of Barcelona in the live terrain demo: it is the Sau reservoir
+  (Embassament de Sau, ~41.97N 2.40E), masked by GEM-15 itself (water + a 9 m
+  buffer, per `docs/research/gem15-paper-notes.md`'s Masking section) — a
+  37,379-pixel (~8.4 km²) NaN cluster at native 15 m resolution. Verified by
+  decoding the published demo PMTiles at z10/z12/z13 and comparing every
+  pixel against an independent source rewarp at the same tiles: 0/0
+  mismatches at all three zooms (every 0-encoded terrain pixel is exactly a
+  source-NaN pixel, and vice versa) — this is faithful rendering of upstream
+  nodata through our documented NaN→0 terrarium convention, not a pipeline
+  bug. The striped wall look is MapLibre's mesh triangulation at a sharp,
+  single-texel elevation discontinuity (confirmed present in the *source*
+  COG itself, e.g. 435.8 m → NaN → 429.1 m across one pixel at z13, not
+  introduced by any resampling step here), not alternating valid/void
+  columns in our tiles. This affects every masked inland water body and
+  snowfield globally under 3D terrain, not just this one reservoir.
+  Options, undecided (the paper's own suggestion is (c)):
+  (a) keep 0-fill as-is, document it prominently (zero engineering cost,
+      visually jarring, already true today);
+  (b) fill voids by nearest-valid-pixel inpainting from GEM-15's own DSM
+      (no new dependency or license, but invents elevation over real water,
+      and a reservoir's true bed depth is nothing like its rim);
+  (c) fill from Copernicus GLO-30, the paper's own documented fallback
+      ("can be filled using the Copernicus GLO-30 DEM at some cost to
+      accuracy") — adds a new source dependency and mixes datasets in one
+      derived asset; GLO-30 is free with attribution (ESA, ~2021), so
+      licensing is compatible but the collection's provenance/attribution
+      text would need to say so explicitly;
+  (d) encode voids at a reserved sentinel instead of 0 and let each style
+      flatten/color them deliberately (e.g. a flat "water blue" plane at
+      local sea level) — most honest about what the data is, but is a
+      terrarium-format deviation that a generic MapLibre `raster-dem`
+      consumer (one not using our styles) will not know to special-case.
+  Not implemented; the user decides before any of these ships.
 
 ## Example app
 

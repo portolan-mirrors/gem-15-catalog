@@ -8,8 +8,9 @@
 <!--
   Phone-friendly single-page demo of the GEM-15 terrain over Barcelona.
 
-  This page reads one asset: a terrarium-encoded elevation PMTiles archive
-  covering Barcelona (z0-14).
+  This page reads one elevation asset, a terrarium-encoded PMTiles archive
+  covering Barcelona (z0-14), and offers two surfaces over it:
+  an absolute hypsometric tint, and Sentinel-2 true-color imagery.
 
   WHY THIS POINTS AT source.coop AND NOT A GITHUB RELEASE ASSET:
   A GitHub release asset serves HTTP range requests, but it sends no CORS
@@ -27,6 +28,12 @@
   - pmtiles 4.5.0, dist/pmtiles.js (IIFE build, sets a global `pmtiles`).
   - maplibre-gl 6.18.0, dist/maplibre-gl.mjs (ESM only, named exports).
   The pmtiles global is registered as a protocol BEFORE the style loads.
+
+  geotiff 3.0.5 is the third dependency, and this page loads it only when
+  a reader first turns the imagery on. Its dist-browser build is a UMD
+  bundle that sets a global `GeoTIFF`, so a classic script tag loads it,
+  the same pattern as pmtiles. It weighs about 540 kB, so the default
+  elevation path never pays for it.
 -->
 <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@6.18.0/dist/maplibre-gl.css">
 <script src="https://unpkg.com/pmtiles@4.5.0/dist/pmtiles.js"></script>
@@ -54,7 +61,7 @@
     right: 12px;
     z-index: 2;
     max-width: 320px;
-    max-height: 46%;
+    max-height: 56%;
     overflow-y: auto;
     padding: 12px 14px 14px;
     background: var(--panel-bg);
@@ -74,13 +81,18 @@
   }
   .row { display: flex; align-items: center; gap: 8px; }
   .row label { flex: 1; }
-  input[type="checkbox"] { width: 20px; height: 20px; }
+  input[type="checkbox"], input[type="radio"] { width: 20px; height: 20px; flex: none; }
   input[type="range"] { width: 100%; height: 28px; }
   .val { font-variant-numeric: tabular-nums; color: var(--muted); min-width: 2.4em; text-align: right; }
   .note { margin: 10px 0 0; font-size: 11.5px; color: var(--muted); }
   .note a { color: var(--accent); }
   fieldset { border: 0; margin: 0; padding: 0; }
   fieldset[disabled] { opacity: 0.45; }
+
+  /* The surface chooser. Rows are tall enough to tap. */
+  .choice { display: flex; align-items: flex-start; gap: 8px; padding: 5px 0; }
+  .choice label { flex: 1; line-height: 1.3; }
+  .choice .hint { display: block; color: var(--muted); font-size: 11px; }
 
   #banner {
     position: absolute;
@@ -103,8 +115,41 @@
   #banner p { margin: 0; font-size: 12.5px; color: #5c4420; }
   #banner a { color: #8a5214; }
 
+  /* The imagery loading chip. It sits clear of the panel and the controls. */
+  #loading {
+    position: absolute;
+    left: 50%;
+    bottom: max(18px, env(safe-area-inset-bottom));
+    transform: translateX(-50%);
+    z-index: 3;
+    display: none;
+    align-items: center;
+    gap: 8px;
+    padding: 7px 14px;
+    font-size: 12.5px;
+    color: var(--ink);
+    background: var(--panel-bg);
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.16);
+  }
+  #loading.show { display: flex; }
+  #loading::before {
+    content: "";
+    width: 12px;
+    height: 12px;
+    border: 2px solid var(--line);
+    border-top-color: var(--accent);
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  @media (prefers-reduced-motion: reduce) {
+    #loading::before { animation: none; }
+  }
+
   @media (min-width: 640px) {
-    .panel { right: auto; width: 300px; }
+    .panel { right: auto; width: 300px; max-height: calc(100% - 24px); }
   }
 </style>
 </head>
@@ -124,9 +169,25 @@
   </p>
 </div>
 
+<div id="loading" role="status" aria-live="polite"><span id="loading-text">Loading imagery</span></div>
+
 <div class="panel">
   <h1>GEM-15 terrain, Barcelona</h1>
   <p class="sub">A Portolan <code>raster-dem</code> demo, drawn by MapLibre GL JS.</p>
+
+  <h2>Surface</h2>
+  <div class="choice">
+    <input type="radio" name="surface" id="surface-tint" value="tint" checked>
+    <label for="surface-tint">Elevation tint
+      <span class="hint">Absolute hypsometric colors under a hillshade.</span>
+    </label>
+  </div>
+  <div class="choice">
+    <input type="radio" name="surface" id="surface-imagery" value="imagery">
+    <label for="surface-imagery">Sentinel-2 imagery
+      <span class="hint">True color, 10 m, 2025 Q4 cloudless mosaic.</span>
+    </label>
+  </div>
 
   <h2>3D terrain</h2>
   <div class="row">
@@ -151,13 +212,18 @@
     Catalog: <a href="https://source.coop/portolan-mirrors/gem-15-catalog" target="_blank" rel="noopener">gem-15-catalog</a>.
     Paper: <a href="https://doi.org/10.31223/X55N75" target="_blank" rel="noopener">doi:10.31223/X55N75</a>.
   </p>
+  <p class="note" id="imagery-credit" hidden>
+    Imagery: Contains modified Copernicus Sentinel data 2025. Sentinel-2
+    quarterly mosaics by ESA, mirror by Taylor Geospatial Engine:
+    <a href="https://source.coop/tge-labs/sentinel-2-quarterly-cloudless-mosaics" target="_blank" rel="noopener">sentinel-2-quarterly-cloudless-mosaics</a>.
+  </p>
 </div>
 
 <script type="module">
 import * as maplibregl from 'https://unpkg.com/maplibre-gl@6.18.0/dist/maplibre-gl.mjs';
 
 // ---------------------------------------------------------------------------
-// The asset
+// The assets
 // ---------------------------------------------------------------------------
 
 // The catalog's published address for the Barcelona demo PMTiles.
@@ -168,7 +234,14 @@ const ATTRIBUTION =
   'This dataset is produced by Google | CC-BY-4.0 | ' +
   '<a href="https://source.coop/portolan-mirrors/gem-15-catalog" target="_blank" rel="noopener">gem-15-catalog</a>';
 
+const S2_ATTRIBUTION =
+  'Contains modified Copernicus Sentinel data 2025 | Sentinel-2 quarterly ' +
+  'mosaics by ESA, mirror by Taylor Geospatial Engine | ' +
+  '<a href="https://source.coop/tge-labs/sentinel-2-quarterly-cloudless-mosaics" target="_blank" rel="noopener">sentinel-2-quarterly-cloudless-mosaics</a>';
+
 const SOURCE_ID = 'gem15-dsm';
+const S2_SOURCE_ID = 's2-rgb';
+const S2_LAYER_ID = 's2-imagery';
 
 // ---------------------------------------------------------------------------
 // The hypsometric ramp. Matches the catalog's hypsometric.json. Each stop is
@@ -231,6 +304,330 @@ function builtinStyle() {
       },
     ],
   };
+}
+
+// Over the imagery the hillshade only hints at relief. Sentinel-2 already
+// carries its own sun and shadow, so a strong second shading muddies it. This
+// keeps a trace of shading, which matters when a reader turns the 3D terrain
+// off and the imagery goes flat.
+const HILLSHADE_OVER_TINT = {
+  'hillshade-exaggeration': 0.5,
+  'hillshade-shadow-color': 'rgba(24, 22, 18, 0.55)',
+  'hillshade-highlight-color': 'rgba(255, 253, 245, 0.25)',
+};
+const HILLSHADE_OVER_IMAGERY = {
+  'hillshade-exaggeration': 0.2,
+  'hillshade-shadow-color': 'rgba(16, 14, 12, 0.22)',
+  'hillshade-highlight-color': 'rgba(255, 252, 240, 0.10)',
+};
+
+// ---------------------------------------------------------------------------
+// Sentinel-2 quarterly cloudless mosaic, 2025 Q4
+//
+// The reader asked for the most recent year. 2026 does not exist in this
+// collection. Its temporal extent ends on 2025-12-31, so 2025 Q4 is the
+// newest quarter.
+//
+// Each MGRS tile stores one band per file, so true color needs three COGs:
+// B04 as red, B03 as green, B02 as blue. Every file is 10008 by 10008 at
+// 10 m in EPSG:32631, Int16, nodata -32768, with five internal overview
+// levels (5004, 2502, 1251, 626, 313). Surface reflectance is value / 10000.
+// Measured against the published files on 2026-11-14.
+// ---------------------------------------------------------------------------
+
+const S2_BASE =
+  'https://data.source.coop/tge-labs/sentinel-2-quarterly-cloudless-mosaics/2025/Q4';
+
+// The nine MGRS tiles that intersect the demo archive. The archive header
+// gives its bounds as lon 1 to 4 and lat 40 to 42, read on 2026-11-14, and
+// the three tiles of the northern row fall entirely above it.
+//
+// Entries are [MGRS, utmMinE, utmMinN, utmMaxE, utmMaxN] in EPSG:32631.
+// MGRS tiles OVERLAP, by 120 m east to west and 60 m south to north here.
+// OVERLAP POLICY: first wins, in this array's order. For each output pixel
+// the code takes the first tile that both covers the pixel and holds data
+// there. A tile that covers the pixel but reads nodata falls through to the
+// next one, so a tile edge never punches a hole in its neighbour.
+const S2_TILES = [
+  ['31TCE', 300000, 4399920, 400080, 4500000],
+  ['31TCF', 300000, 4499940, 400080, 4600020],
+  ['31TCG', 300000, 4599960, 400080, 4700040],
+  ['31TDE', 399960, 4399920, 500040, 4500000],
+  ['31TDF', 399960, 4499940, 500040, 4600020],
+  ['31TDG', 399960, 4599960, 500040, 4700040],
+  ['31TEE', 499980, 4399920, 600060, 4500000],
+  ['31TEF', 499980, 4499940, 600060, 4600020],
+  ['31TEG', 499980, 4599960, 600060, 4700040],
+];
+
+const S2_BANDS = ['B04', 'B03', 'B02'];
+const S2_NODATA = -32768;
+
+// Reflectance stretch. Values are reflectance, which is the stored integer
+// over 10000. Tuned on the real files over Barcelona on 2026-11-14: a 26 km
+// box of city, sea and the Collserola ridge. Land pixels there run p25 0.02,
+// p50 0.05, p95 0.17. A ceiling of 0.25 with gamma 0.70 puts the land median
+// near 75 of 255 and clips about 1 % of land pixels, which are beaches and
+// bright roofs. A plain linear stretch leaves the city too dark to read.
+const S2_MAX_REFLECTANCE = 0.25;
+const S2_GAMMA = 0.70;
+
+const TILE_PX = 256;
+// The inverse warp samples UTM on a lattice and interpolates between the
+// lattice points. 16 cells across a 256 px tile is 16 px per cell.
+const WARP_GRID = 16;
+
+// --- WGS84 to UTM zone 31N, forward -----------------------------------------
+// Snyder's transverse Mercator series, which is exact to millimetres inside
+// one zone. Every tile in this demo is in zone 31N, so the page needs no
+// general projection library.
+const WGS84_A = 6378137.0;
+const WGS84_F = 1 / 298.257223563;
+const E2 = WGS84_F * (2 - WGS84_F);
+const EP2 = E2 / (1 - E2);
+const UTM_K0 = 0.9996;
+const UTM_LON0 = 3 * Math.PI / 180;   // zone 31 central meridian
+const UTM_FE = 500000;
+
+function lonLatToUtm31(lonDeg, latDeg) {
+  const lat = latDeg * Math.PI / 180;
+  const lon = lonDeg * Math.PI / 180;
+  const sinLat = Math.sin(lat);
+  const cosLat = Math.cos(lat);
+  const tanLat = Math.tan(lat);
+
+  const N = WGS84_A / Math.sqrt(1 - E2 * sinLat * sinLat);
+  const T = tanLat * tanLat;
+  const C = EP2 * cosLat * cosLat;
+  const A = (lon - UTM_LON0) * cosLat;
+
+  const M = WGS84_A * (
+    (1 - E2 / 4 - 3 * E2 * E2 / 64 - 5 * E2 * E2 * E2 / 256) * lat
+    - (3 * E2 / 8 + 3 * E2 * E2 / 32 + 45 * E2 * E2 * E2 / 1024) * Math.sin(2 * lat)
+    + (15 * E2 * E2 / 256 + 45 * E2 * E2 * E2 / 1024) * Math.sin(4 * lat)
+    - (35 * E2 * E2 * E2 / 3072) * Math.sin(6 * lat)
+  );
+
+  const A2 = A * A;
+  const east = UTM_FE + UTM_K0 * N * (
+    A + (1 - T + C) * A2 * A / 6
+    + (5 - 18 * T + T * T + 72 * C - 58 * EP2) * A2 * A2 * A / 120
+  );
+  const north = UTM_K0 * (
+    M + N * tanLat * (
+      A2 / 2 + (5 - T + 9 * C + 4 * C * C) * A2 * A2 / 24
+      + (61 - 58 * T + T * T + 600 * C - 330 * EP2) * A2 * A2 * A2 / 720
+    )
+  );
+  return [east, north];
+}
+
+// --- Web Mercator tile helpers ----------------------------------------------
+function tileLon(x, z) {
+  return x / Math.pow(2, z) * 360 - 180;
+}
+function tileLat(y, z) {
+  const n = Math.PI - 2 * Math.PI * y / Math.pow(2, z);
+  return 180 / Math.PI * Math.atan(0.5 * (Math.exp(n) - Math.exp(-n)));
+}
+
+// --- COG access --------------------------------------------------------------
+// One GeoTIFF object per file, kept for the life of the page. geotiff.js reads
+// the header once and then caches fetched byte blocks inside its own blocked
+// source, so later tiles reuse both.
+const cogCache = new Map();
+
+function openCog(url) {
+  let entry = cogCache.get(url);
+  if (!entry) {
+    entry = (async () => {
+      const tiff = await GeoTIFF.fromUrl(url, { cacheSize: 256 });
+      const count = await tiff.getImageCount();
+      const levels = [];
+      for (let i = 0; i < count; i++) {
+        const image = await tiff.getImage(i);
+        levels.push({ image, width: image.getWidth(), height: image.getHeight() });
+      }
+      return { tiff, levels };
+    })();
+    cogCache.set(url, entry);
+  }
+  return entry;
+}
+
+// Pick the coarsest overview whose pixel is still finer than the screen pixel.
+// Level 0 is full resolution, so it is the floor.
+function pickLevel(levels, tileSpanMetres, wantMetresPerPixel) {
+  let chosen = 0;
+  for (let i = 0; i < levels.length; i++) {
+    const res = tileSpanMetres / levels[i].width;
+    if (res <= wantMetresPerPixel) chosen = i;
+  }
+  return chosen;
+}
+
+// ---------------------------------------------------------------------------
+// The s2:// protocol
+//
+// MapLibre cannot read a COG. This handler answers one XYZ tile at a time. It
+// warps from EPSG:32631 into Web Mercator by inverse sampling: for every
+// output pixel it finds the UTM coordinate, then takes the nearest source
+// sample. The UTM coordinate comes from a 17 by 17 lattice of exact
+// projections with bilinear interpolation in between.
+//
+// THE APPROXIMATION, STATED PLAINLY: the interpolation treats the projection
+// as linear inside each lattice cell, which is 16 output pixels wide. The
+// grid convergence and the scale change across one cell are far below one
+// pixel at every zoom this demo serves, so the seams and the geometry are
+// correct to well under a pixel. Resampling is nearest neighbour, so a
+// zoomed-in view shows square source pixels rather than a smooth blur.
+// ---------------------------------------------------------------------------
+
+let inFlight = 0;
+
+async function s2Protocol(params, abortController) {
+  const match = /^s2:\/\/(\d+)\/(\d+)\/(\d+)/.exec(params.url);
+  if (!match) throw new Error(`bad s2 tile url: ${params.url}`);
+  const z = +match[1], x = +match[2], y = +match[3];
+  const signal = abortController.signal;
+
+  inFlight += 1;
+  updateLoading();
+  try {
+    return { data: await buildS2Tile(z, x, y, signal) };
+  } finally {
+    inFlight -= 1;
+    updateLoading();
+  }
+}
+
+async function buildS2Tile(z, x, y, signal) {
+  // 1. Exact UTM on the lattice. Web Mercator x is linear in longitude, and
+  //    y maps to latitude through the inverse Gudermannian above.
+  const lattice = new Float64Array((WARP_GRID + 1) * (WARP_GRID + 1) * 2);
+  let minE = Infinity, minN = Infinity, maxE = -Infinity, maxN = -Infinity;
+  for (let j = 0; j <= WARP_GRID; j++) {
+    const lat = tileLat(y + j / WARP_GRID, z);
+    for (let i = 0; i <= WARP_GRID; i++) {
+      const lon = tileLon(x + i / WARP_GRID, z);
+      const [e, n] = lonLatToUtm31(lon, lat);
+      const k = (j * (WARP_GRID + 1) + i) * 2;
+      lattice[k] = e;
+      lattice[k + 1] = n;
+      if (e < minE) minE = e;
+      if (e > maxE) maxE = e;
+      if (n < minN) minN = n;
+      if (n > maxN) maxN = n;
+    }
+  }
+
+  const wantRes = (maxE - minE) / TILE_PX;
+
+  // 2. Which MGRS tiles does this output tile touch? Order is the manifest
+  //    order, which is what makes the overlap policy deterministic.
+  const hits = S2_TILES.filter(
+    (t) => t[3] > minE && t[1] < maxE && t[4] > minN && t[2] < maxN,
+  );
+  if (hits.length === 0) return transparentTile();
+
+  // 3. Read one window per band per touched tile.
+  const sources = [];
+  for (const [mgrs, tMinE, tMinN, tMaxE, tMaxN] of hits) {
+    const bands = await Promise.all(S2_BANDS.map(async (band) => {
+      const { levels } = await openCog(`${S2_BASE}/${mgrs}_0_0/${band}.tif`);
+      const level = pickLevel(levels, tMaxE - tMinE, wantRes);
+      const { image, width, height } = levels[level];
+      const res = (tMaxE - tMinE) / width;
+
+      // Window in this level's pixel grid, clamped to the image and padded by
+      // one pixel so a nearest sample at the edge still lands inside.
+      const c0 = Math.max(0, Math.floor((minE - tMinE) / res) - 1);
+      const c1 = Math.min(width, Math.ceil((maxE - tMinE) / res) + 1);
+      const r0 = Math.max(0, Math.floor((tMaxN - maxN) / res) - 1);
+      const r1 = Math.min(height, Math.ceil((tMaxN - minN) / res) + 1);
+      if (c1 <= c0 || r1 <= r0) return null;
+
+      const rasters = await image.readRasters({
+        window: [c0, r0, c1, r1],
+        samples: [0],
+        interleave: false,
+        signal,
+      });
+      return {
+        values: rasters[0], w: c1 - c0, h: r1 - r0,
+        c0, r0, res, originE: tMinE, originN: tMaxN,
+      };
+    }));
+    if (bands.every((b) => b !== null)) sources.push(bands);
+  }
+  if (sources.length === 0) return transparentTile();
+
+  // 4. Inverse-warp, composite, stretch.
+  const rgba = new Uint8ClampedArray(TILE_PX * TILE_PX * 4);
+  const scale = WARP_GRID / TILE_PX;
+
+  for (let py = 0; py < TILE_PX; py++) {
+    const fv = (py + 0.5) * scale;
+    const j0 = Math.min(WARP_GRID - 1, Math.floor(fv));
+    const tv = fv - j0;
+    for (let px = 0; px < TILE_PX; px++) {
+      const fu = (px + 0.5) * scale;
+      const i0 = Math.min(WARP_GRID - 1, Math.floor(fu));
+      const tu = fu - i0;
+
+      // Bilinear over the lattice cell.
+      const k00 = (j0 * (WARP_GRID + 1) + i0) * 2;
+      const k10 = k00 + 2;
+      const k01 = k00 + (WARP_GRID + 1) * 2;
+      const k11 = k01 + 2;
+      const w00 = (1 - tu) * (1 - tv), w10 = tu * (1 - tv);
+      const w01 = (1 - tu) * tv, w11 = tu * tv;
+      const e = lattice[k00] * w00 + lattice[k10] * w10 + lattice[k01] * w01 + lattice[k11] * w11;
+      const n = lattice[k00 + 1] * w00 + lattice[k10 + 1] * w10
+        + lattice[k01 + 1] * w01 + lattice[k11 + 1] * w11;
+
+      const o = (py * TILE_PX + px) * 4;
+
+      // First tile that covers the pixel AND holds data there.
+      let done = false;
+      for (let s = 0; s < sources.length && !done; s++) {
+        const bands = sources[s];
+        const ref = bands[0];
+        const col = Math.round((e - ref.originE) / ref.res - 0.5) - ref.c0;
+        const row = Math.round((ref.originN - n) / ref.res - 0.5) - ref.r0;
+        if (col < 0 || row < 0 || col >= ref.w || row >= ref.h) continue;
+
+        const idx = row * ref.w + col;
+        const r = bands[0].values[idx];
+        const g = bands[1].values[idx];
+        const b = bands[2].values[idx];
+        if (r === S2_NODATA || g === S2_NODATA || b === S2_NODATA) continue;
+
+        rgba[o] = stretch(r);
+        rgba[o + 1] = stretch(g);
+        rgba[o + 2] = stretch(b);
+        rgba[o + 3] = 255;
+        done = true;
+      }
+      if (!done) rgba[o + 3] = 0;
+    }
+  }
+
+  return createImageBitmap(new ImageData(rgba, TILE_PX, TILE_PX));
+}
+
+// A 256 lookup table would not help here, because the input is a 16 bit
+// integer. The cost is one pow per sample, which the profile shows is minor
+// next to the HTTP reads.
+function stretch(dn) {
+  const v = dn / 10000 / S2_MAX_REFLECTANCE;
+  if (v <= 0) return 0;
+  if (v >= 1) return 255;
+  return Math.pow(v, S2_GAMMA) * 255;
+}
+
+function transparentTile() {
+  return createImageBitmap(new ImageData(new Uint8ClampedArray(TILE_PX * TILE_PX * 4), TILE_PX, TILE_PX));
 }
 
 // ---------------------------------------------------------------------------
@@ -324,6 +721,128 @@ terrainToggle.addEventListener('change', () => {
 exaggeration.addEventListener('input', applyTerrain);
 
 map.on('load', applyTerrain);
+
+// ---------------------------------------------------------------------------
+// The surface chooser
+//
+// Switching never calls setStyle. A setStyle drops the terrain and reloads
+// every source, which makes the map flash and can strand a reader mid-gesture.
+// This adds the imagery source once, then toggles layer visibility, so the
+// second and later switches are instant and the terrain stays up throughout.
+// ---------------------------------------------------------------------------
+
+const loading = document.getElementById('loading');
+const loadingText = document.getElementById('loading-text');
+const imageryCredit = document.getElementById('imagery-credit');
+const surfaceRadios = [...document.querySelectorAll('input[name="surface"]')];
+
+let imageryReady = false;
+let imageryInit = null;
+let initialising = false;
+
+function updateLoading() {
+  const busy = initialising || inFlight > 0;
+  loading.classList.toggle('show', busy);
+  if (!initialising) loadingText.textContent = 'Loading imagery';
+}
+
+// geotiff.js arrives as a classic script, the same pattern as pmtiles. The
+// page asks for it only here, so a reader who never opens the imagery never
+// downloads it.
+function loadGeotiff() {
+  if (window.GeoTIFF) return Promise.resolve();
+  return new Promise((resolve, reject) => {
+    const el = document.createElement('script');
+    el.src = 'https://unpkg.com/geotiff@3.0.5/dist-browser/geotiff.js';
+    el.onload = () => resolve();
+    el.onerror = () => reject(new Error('geotiff.js failed to load'));
+    document.head.appendChild(el);
+  });
+}
+
+async function initImagery() {
+  initialising = true;
+  loadingText.textContent = 'Preparing imagery';
+  updateLoading();
+  try {
+    await loadGeotiff();
+    maplibregl.addProtocol('s2', s2Protocol);
+
+    // Read the header of one file now, so the first tiles do not also pay
+    // for a cold start, and so a dead endpoint surfaces here rather than as
+    // a silent run of blank tiles.
+    await openCog(`${S2_BASE}/31TDF_0_0/B04.tif`);
+
+    map.addSource(S2_SOURCE_ID, {
+      type: 'raster',
+      tiles: ['s2://{z}/{x}/{y}'],
+      tileSize: TILE_PX,
+      minzoom: 7,
+      // 10 m sits between z13 and z14 at this latitude. MapLibre overzooms
+      // past the maximum rather than asking for tiles that do not exist.
+      maxzoom: 14,
+      // Match the demo archive, so MapLibre never requests a tile outside
+      // the area this page covers.
+      bounds: [1, 40, 4, 42],
+      attribution: S2_ATTRIBUTION,
+    });
+    // Under the hillshade, so the shading still reads over the imagery.
+    map.addLayer({
+      id: S2_LAYER_ID,
+      type: 'raster',
+      source: S2_SOURCE_ID,
+      paint: { 'raster-opacity': 1, 'raster-fade-duration': 150 },
+    }, 'hillshade');
+
+    imageryReady = true;
+  } finally {
+    initialising = false;
+    updateLoading();
+  }
+}
+
+function setPaint(props) {
+  for (const [k, v] of Object.entries(props)) {
+    map.setPaintProperty('hillshade', k, v);
+  }
+}
+
+async function applySurface() {
+  const mode = surfaceRadios.find((r) => r.checked).value;
+  imageryCredit.hidden = mode !== 'imagery';
+
+  if (mode === 'imagery') {
+    if (!imageryReady) {
+      // One init at a time. A reader who taps back and forth gets the same
+      // promise rather than a second script load.
+      imageryInit = imageryInit || initImagery();
+      try {
+        await imageryInit;
+      } catch (err) {
+        console.warn('Imagery unavailable:', err);
+        imageryInit = null;
+        // Fall back to the tint rather than leaving a blank map.
+        surfaceRadios.find((r) => r.value === 'tint').checked = true;
+        imageryCredit.hidden = true;
+        applySurface();
+        return;
+      }
+      // The reader may have switched back while the init was in flight.
+      if (surfaceRadios.find((r) => r.checked).value !== 'imagery') return;
+    }
+    map.setLayoutProperty(S2_LAYER_ID, 'visibility', 'visible');
+    map.setLayoutProperty('elevation-tint', 'visibility', 'none');
+    setPaint(HILLSHADE_OVER_IMAGERY);
+  } else {
+    if (imageryReady) map.setLayoutProperty(S2_LAYER_ID, 'visibility', 'none');
+    map.setLayoutProperty('elevation-tint', 'visibility', 'visible');
+    setPaint(HILLSHADE_OVER_TINT);
+  }
+}
+
+for (const radio of surfaceRadios) {
+  radio.addEventListener('change', () => { applySurface(); });
+}
 </script>
 </body>
 </html>
