@@ -36,7 +36,7 @@ something.
 
 | Rule | Where | Why accepted | Tracking |
 |---|---|---|---|
-| PTL-COL-005 | gem-15/collection.json | Metadata-first mirror: the normative item JSONs are Google's own, reachable through the collection's 297 absolute `child` links and its `canonical` link; republishing 13,485 unchanged item files would duplicate the upstream byte for byte. `items.parquet` is built 1:1 from those upstream items. | portolan-spec issue pending (prepared body: `docs/research/pending-issue-ptl-col-005.md`; replace this cell with the issue URL once filed) |
+| PTL-COL-005 | gem-15/collection.json | Metadata-first mirror: the normative item JSONs are Google's own, reachable through the collection's 297 absolute `child` links and its `canonical` link; republishing 13,485 unchanged item files would duplicate the upstream byte for byte. `items.parquet` is built 1:1 from those upstream items. | [portolan-spec#260](https://github.com/portolan-sdi/portolan-spec/issues/260) |
 
 <!--
 When you accept one, add a row and a section explaining it, like this:
