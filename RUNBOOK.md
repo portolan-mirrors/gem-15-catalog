@@ -213,24 +213,77 @@ sbatch --partition=cpu_amd --nodes=1 --cpus-per-task=64 --mem=128G \
 #!/bin/bash
 set -euo pipefail
 SCRATCH="/tmp/gem15-build-${SLURM_JOB_ID}"
-trap 'rm -rf "$SCRATCH"' EXIT
-mkdir -p "$SCRATCH"
+DEST_DIR="staging/publish/gem-15/terrain"
+DEST="$DEST_DIR/gem-15-dsm-terrarium.pmtiles"
+mkdir -p "$SCRATCH" "$DEST_DIR"
 
+# No EXIT trap here, on purpose -- see "Artifact integrity" below for why.
+# Everything this build produces (the working MBTiles/WAL/SHM, and the
+# --output .pmtiles itself) stays on node-local scratch until the copy at
+# the bottom of this script has been independently verified.
 python3 tools/build_terrain.py --band dsm --minzoom 0 --maxzoom 14 \
   --workers 64 --db-path "$SCRATCH" \
-  --output staging/publish/gem-15/terrain/gem-15-dsm-terrarium.pmtiles
+  --output "$SCRATCH/gem-15-dsm-terrarium.pmtiles"
 
-# --output above already wrote the final .pmtiles to shared/network
-# storage directly (that write is a single sequential pass at the very
-# end, not the random-access inserts --db-path was for); only the
-# intermediate MBTiles + WAL/SHM lived in $SCRATCH, and the trap above
-# cleans them up whether the build succeeds or fails. If the operator's
-# site instead wants the MBTiles itself preserved (e.g. to resume a run
-# across jobs without redoing a partial zoom), rsync it off $SCRATCH
-# before this script exits and point the next job's --db-path at a
-# restored copy, not at a fresh empty one.
+SRC="$SCRATCH/gem-15-dsm-terrarium.pmtiles"
+rsync -a "$SRC" "$DEST"
+sync   # force the copy's bytes to actual storage, not just cached in RAM,
+       # before the checksum below is allowed to trust them (NFS: this
+       # still matters -- it is what turns a client-buffered write into a
+       # server-committed one under close-to-open semantics)
+SRC_SHA=$(sha256sum "$SRC" | cut -d' ' -f1)
+DEST_SHA=$(sha256sum "$DEST" | cut -d' ' -f1)
+if [ "$SRC_SHA" != "$DEST_SHA" ]; then
+  echo "FATAL: $DEST (sha256 $DEST_SHA) does not match $SRC (sha256 $SRC_SHA)." >&2
+  echo "Scratch at $SCRATCH left in place for inspection; not cleaned up." >&2
+  exit 1
+fi
+echo "verified: $DEST matches $SRC (sha256 $DEST_SHA)"
+
+# Only reached once the checksum above has already matched: cleanup is a
+# consequence of verified success, not of this script exiting one way or
+# another (which is also why there is no `trap ... EXIT rm -rf` anywhere
+# in this script -- see below).
+rm -rf "$SCRATCH"
 EOF
 ```
+
+**Artifact integrity: why there is no `trap ... EXIT` here, and why "the
+size looked right" is not a verification.** A real incident on this
+cluster: an 11.8 GB MBTiles on NFS was found truncated to a 32 KB
+empty-schema sparse file *minutes after* two independent `ls -la` size
+checks had already confirmed the full 11.8 GB was there. Opening it
+read-only and running a SQLite query against it over the WAL was tested
+and exonerated (not the cause). The prime suspect, structurally: a
+cleanup step (an `EXIT` trap deleting or truncating scratch, or a second,
+overlapping copy) racing the first copy, triggered by the job ending (or
+by the trap firing more than once -- an `EXIT` trap fires on *every* exit
+path: normal completion, a later `exit` in the same script, even a
+signal, and can legitimately run twice if more than one of those happens
+in the same job). Checking a file's size twice, even "independently," does
+not rule this out: both checks can land in the window after a truncating
+write has started but before it reaches whatever offset the check reads,
+on a filesystem (NFS) where metadata like size is not synchronized with
+data the way local-disk intuition expects.
+
+The fix is structural, not a better check: make the failure mode
+impossible to reach, rather than detecting it after the fact.
+1. **No `trap ... EXIT` that deletes or moves anything, anywhere in the
+   job script.** A trap cannot be made to "only fire once at the real
+   end" -- that is not what `EXIT` traps are for. Cleanup is instead the
+   literal last line of the success path, nothing else.
+2. **Copy, then force it to stable storage, then hash both sides, in that
+   order, before anything is allowed to call the copy "done."** `rsync`
+   finishing is not evidence the destination's bytes are durable, only
+   that it issued the writes; `sync` (or an `fsync` targeted at the
+   destination file specifically, equivalent here) is the step that
+   actually waits for them. The sha256 comparison is the only thing in
+   this script that may legitimately be trusted as "the destination is
+   correct" -- a matching size is not that, for exactly the reason above.
+3. **Cleanup only after a verified match, never otherwise.** A checksum
+   mismatch exits non-zero with scratch left in place on purpose --
+   exactly the forensic evidence the real incident above did not have,
+   since whatever a trap deleted was gone by the time anyone looked.
 
 64 cores comfortably covers `--workers 64` for the fetch stage plus
 `--encode-workers 64` (the default, same as `--workers`) for the separate
@@ -324,10 +377,13 @@ cell.
 ```bash
 python3 tools/build_terrain.py --band dsm --minzoom 0 --maxzoom 14 \
   --workers 64 --db-path "$SCRATCH" \
-  --output staging/publish/gem-15/terrain/gem-15-dsm-terrarium.pmtiles
+  --output "$SCRATCH/gem-15-dsm-terrarium.pmtiles"
 ```
 
-(run inside the sbatch shape in "Compute" above, not interactively). This
+(run inside the sbatch shape in "Compute" above, not interactively --
+including its copy/verify/cleanup sequence after this command: `--output`
+above is deliberately scratch-local too, not the final published path
+directly, per that section's "Artifact integrity" note). This
 is the expensive step, and the one the first attempt at it on the real
 cluster found three serious defects in -- all three are fixed as of this
 revision of `tools/build_terrain.py`; read its module docstring for the
@@ -591,7 +647,7 @@ contract -- add it there first if you publish it.
 
 ```bash
 python3 tools/build_terrain.py --band dsm --minzoom 0 --maxzoom 14 \
-  --bbox 1.0,40.8,3.3,42.0 \
+  --bbox=1.0,40.8,3.3,42.0 \
   --output staging/publish/gem-15/terrain/gem-15-dsm-terrarium-demo-barcelona.pmtiles
 ```
 
@@ -735,8 +791,15 @@ Canaries excluded (roughly):
 ```bash
 BBOX=-9.5,36.0,3.5,43.8
 
-python3 tools/build_overview.py --bbox $BBOX --workers 16
-python3 tools/build_terrain.py --band dsm --minzoom 0 --maxzoom 14 --bbox $BBOX \
+# Always the --flag=value form for --bbox, not --flag value: a bbox this
+# far south/west starts with a literal "-", and argparse's space form
+# reads the next token as if it might be another option rather than
+# --bbox's value ("error: argument --bbox: expected one argument"),
+# confirmed with this exact BBOX -- verified, not assumed. The problem is
+# argparse's own tokenizing, so quoting "$BBOX" does not help; only the
+# --bbox=$BBOX form does.
+python3 tools/build_overview.py --bbox="$BBOX" --workers 16
+python3 tools/build_terrain.py --band dsm --minzoom 0 --maxzoom 14 --bbox="$BBOX" \
   --output /tmp/country-dryrun-dsm-terrarium.pmtiles
 ```
 

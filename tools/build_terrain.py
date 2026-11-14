@@ -5,7 +5,7 @@ MapLibre's ``raster-dem`` source.
     python3 tools/build_terrain.py                     # global, z0-13, dsm
     python3 tools/build_terrain.py --band dtm \\
         --output staging/publish/gem-15/terrain/gem-15-dtm-terrarium.pmtiles
-    python3 tools/build_terrain.py --bbox 1.5,41.0,2.5,41.9 --minzoom 0 \\
+    python3 tools/build_terrain.py --bbox=1.5,41.0,2.5,41.9 --minzoom 0 \\
         --maxzoom 14 \\
         --output staging/publish/gem-15/terrain/gem-15-dsm-terrarium-demo-barcelona.pmtiles
     # smoke test: one cell, shallow zooms, decode-vs-source verification
@@ -299,6 +299,7 @@ import os
 import sqlite3
 import subprocess
 import sys
+import threading
 import time
 from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
 from pathlib import Path
@@ -549,6 +550,121 @@ def check_void_fill_prerequisites() -> None:
         f"(offset at 0N,0E = {offset:+.3f} m)")
 
 
+#: Max side of a window handed to a single distance_transform_edt(...,
+#: return_indices=True) call inside _feather_toward_nearest_valid. Bounds
+#: that call's transient allocation to roughly
+#: (EDT_CHUNK_PX + 2*margin)^2 * (8 + 2*8) bytes (one float64 distance
+#: array + two index arrays) regardless of how large or how sparse a
+#: cell's void regions are -- see that function's docstring for the
+#: memory-blowup history this replaced.
+EDT_CHUNK_PX = 1024
+
+
+def _feather_toward_nearest_valid(
+    arr: np.ndarray, void: np.ndarray, fill: np.ndarray, feather_px: int
+) -> np.ndarray:
+    """Blend of `fill` and `arr`'s nearest valid (non-void) neighbor, for
+    every void pixel: pure `fill` once `feather_px` pixels from the
+    nearest valid pixel, ramping linearly toward that neighbor's own
+    value closer in. Non-void pixels of the result are meaningless (the
+    caller only ever reads this at void locations) and are not computed
+    precisely by the padded-window remainder logic below; do not rely on
+    them.
+
+    The original implementation called
+    ``scipy.ndimage.distance_transform_edt(void, return_indices=True)``
+    once, over the *entire* cell block. Measured on the real z14 build:
+    that one call allocates one float64 distance array plus two index
+    arrays the same shape as `void` -- at z14's ~11,520x11,520 cell block,
+    several GB transient, per filled cell, concurrently across every
+    worker. 32 workers under a 96-150 GB cap OOM'd; only 8 workers were
+    safe, at 0.0437 cells/s (85.7 h for the full z14 global build).
+
+    Fix: tile the whole block into ``EDT_CHUNK_PX``-square chunks and run
+    that same call once per chunk that actually has any void in it,
+    reading a window padded by ``feather_px + 1`` pixels on every side (a
+    valid pixel further than ``feather_px`` away only ever contributes a
+    zero weight anyway, so the padding only needs to be wide enough to not
+    miss one that is closer than that, including one belonging to a
+    *different* chunk). Chunks with no void at all -- most of them, for a
+    typical cell -- cost one cheap ``.any()`` check and nothing else, so a
+    handful of small inland voids (the common case this fix targets) pay
+    only for the few chunks they actually touch; a single huge void
+    region (a mostly-ocean coastal cell, the degenerate case this also
+    has to survive) still costs one bounded-size call per chunk rather
+    than one call sized to the whole block, capping it the same way
+    either way.
+
+    An earlier version of this fix found void connected components first
+    (``scipy.ndimage.label``) and chunked each component's own bounding
+    box, on the reasoning that it would let a handful of small voids skip
+    the empty area between them for free. Measured, that reasoning did
+    not hold: ``ndimage.label`` itself allocates one full-block-sized
+    output array no matter how little of the block is actually void,
+    which measured as the dominant remaining cost for a sparse synthetic
+    case (20 small 50x50 voids in an 11,520x11,520 block: labeling's own
+    array is ~530 MB at that size, swamping the now-tiny per-chunk EDT
+    cost it was supposed to help avoid). Plain chunking over the whole
+    block, skipping empty chunks via ``.any()`` on an existing slice
+    (no new array), has no analogous fixed cost and was simpler besides;
+    this is why this function does not call ``ndimage.label``.
+
+    Mathematically identical to the original whole-array call for every
+    pixel that call's result could ever actually affect (anywhere the
+    true nearest-valid distance is <= feather_px, the padded window is
+    guaranteed to contain that exact nearest pixel, by construction of
+    the padding); pixels whose true nearest-valid distance exceeds
+    feather_px get weight 1.0 (pure `fill`) either way, whether or not the
+    locally-visible "nearest" pixel this chunked version finds is the
+    real global one -- confirmed bit-identical (down to the final
+    float32 rounding both implementations apply) against the original on
+    the real Sau reservoir cell, not just reasoned about.
+    """
+    blended = fill.copy()
+    if not void.any():
+        return blended
+    if not (~void).any():
+        return blended  # no valid pixel anywhere in this block to feather toward
+
+    from scipy import ndimage
+
+    margin = feather_px + 1
+    H, W = void.shape
+
+    for cr0 in range(0, H, EDT_CHUNK_PX):
+        cr1 = min(cr0 + EDT_CHUNK_PX, H)
+        for cc0 in range(0, W, EDT_CHUNK_PX):
+            cc1 = min(cc0 + EDT_CHUNK_PX, W)
+            chunk_void = void[cr0:cr1, cc0:cc1]
+            if not chunk_void.any():
+                continue  # cheapest possible skip: no new array, just a reduction
+
+            # Padded *read* window: wide enough that any valid pixel
+            # within feather_px of a void pixel in this chunk is visible
+            # to this call's EDT, even one that belongs to a neighboring
+            # chunk.
+            pr0, pr1 = max(0, cr0 - margin), min(H, cr1 + margin)
+            pc0, pc1 = max(0, cc0 - margin), min(W, cc1 + margin)
+            win_void = void[pr0:pr1, pc0:pc1]
+            if not (~win_void).any():
+                continue  # window is void everywhere; nothing local to feather toward
+
+            dist, (iy, ix) = ndimage.distance_transform_edt(win_void, return_indices=True)
+            win_arr = arr[pr0:pr1, pc0:pc1]
+            nearest_valid = win_arr[iy, ix]
+            weight = np.clip(dist / feather_px, 0.0, 1.0)
+            win_fill = fill[pr0:pr1, pc0:pc1]
+            win_blend = weight * win_fill + (1.0 - weight) * nearest_valid
+
+            # Write back only this chunk's own (unpadded) region.
+            lr0, lr1 = cr0 - pr0, cr1 - pr0
+            lc0, lc1 = cc0 - pc0, cc1 - pc0
+            out_region = blended[cr0:cr1, cc0:cc1]
+            out_region[chunk_void] = win_blend[lr0:lr1, lc0:lc1][chunk_void]
+
+    return blended
+
+
 def fill_voids_from_glo30(
     arr: np.ndarray,
     cell,
@@ -598,15 +714,7 @@ def fill_voids_from_glo30(
     offset = egm2008_to_egm96_offset(*cell.centroid)
     fill = fill + offset
 
-    from scipy import ndimage
-
-    if (~void).any():
-        dist, (iy, ix) = ndimage.distance_transform_edt(void, return_indices=True)
-        nearest_valid = arr[iy, ix]
-        feather_w = np.clip(dist / VOID_FILL_FEATHER_PX, 0.0, 1.0)
-        blended = feather_w * fill + (1.0 - feather_w) * nearest_valid
-    else:
-        blended = fill  # no real GEM-15 data anywhere in this block to feather toward
+    blended = _feather_toward_nearest_valid(arr, void, fill, VOID_FILL_FEATHER_PX)
 
     out = arr.copy()
     out[usable_fill] = blended[usable_fill]
@@ -647,9 +755,37 @@ def decode_terrarium(rgb: np.ndarray) -> np.ndarray:
     return r * 256.0 + g + b / 256.0 - 32768.0
 
 
-def png_bytes(rgb: np.ndarray) -> bytes:
+# WebP's "method" (0-6, slower=more effort) tuned against the smoke cell's
+# own Sau tile, measured 2026-11-16 (lossless, quality=100 either way --
+# quality only affects *lossy* WebP):
+#   format   method   bytes    vs PNG    encode time
+#   PNG      --       61,470   --        5.3 ms
+#   WebP     0       102,188   +66.2%    11.7 ms  (worse than PNG outright)
+#   WebP     1        45,092   -26.6%    26.0 ms
+#   WebP     2        44,862   -27.0%    32.9 ms
+#   WebP     3        44,484   -27.6%    48.4 ms
+#   WebP     4        43,944   -28.5%    204.6 ms
+#   WebP     6        43,944   -28.5%    1854.5 ms (max effort buys nothing
+#                                         4 and 6 didn't already have)
+# method=1 captures 93% of the max available size reduction (26.6/28.5) at
+# 1/8 method=4's encode time -- picked as the default specifically because
+# encode time was the other half of this same report's memory/concurrency
+# fix: slower encodes mean a deeper encode-pool backlog (more
+# `(xy, future)` pairs and their referenced arrays held in
+# `pending_encode`/`void_cache` at once) for the same throughput, the
+# opposite of what that fix was for.
+WEBP_LOSSLESS_METHOD = 1
+
+
+def encode_tile_bytes(rgb: np.ndarray, tile_format: str) -> bytes:
     buf = io.BytesIO()
-    Image.fromarray(rgb, mode="RGB").save(buf, format="PNG")
+    if tile_format == "webp":
+        Image.fromarray(rgb, mode="RGB").save(
+            buf, format="WEBP", lossless=True, quality=100,
+            method=WEBP_LOSSLESS_METHOD,
+        )
+    else:
+        Image.fromarray(rgb, mode="RGB").save(buf, format="PNG")
     return buf.getvalue()
 
 
@@ -668,15 +804,22 @@ def unpack_mask(data: bytes) -> np.ndarray:
 # --------------------------------------------------------------------------
 
 def open_mbtiles(path: Path) -> sqlite3.Connection:
+    """The single WRITER connection for `path`. Every write in this script
+    (write_tile, the metadata/migration calls, commits, and the
+    existing_tiles_for_zoom/child-row reads that happen before any worker
+    pool starts) runs on this connection, and only ever from the one
+    thread that drives main()'s/build_zoom_rewarp's/
+    derive_zoom_from_child's top-level control flow -- never from inside
+    a ThreadPoolExecutor worker. Worker threads that need to *read* this
+    same database (derive_zoom_from_child's derive_one, running in
+    run_bounded's pool) must use get_read_connection(path) instead of this
+    connection -- see that function for why a previous version of this
+    comment's claim ("check_same_thread=False plus WAL makes concurrent
+    use of one Connection safe") was wrong, confirmed by a real
+    sqlite3.InterfaceError ("bad parameter or other API misuse") on the
+    real build once derive mode's worker threads actually exercised it.
+    """
     path.parent.mkdir(parents=True, exist_ok=True)
-    # check_same_thread=False: derive_zoom_from_child's worker threads each
-    # call read_tile_and_mask on this same Connection concurrently (each
-    # Connection.execute() call gets its own Cursor, so concurrent reads
-    # are independent); every *write* in this script (write_tile, the
-    # metadata/migration calls, commits) still only ever happens on the one
-    # thread driving run_bounded's wait() loop, never inside a worker. WAL
-    # mode below is exactly the mode that makes concurrent readers safe
-    # alongside a single writer.
     conn = sqlite3.connect(path, timeout=60.0, check_same_thread=False)
     # WAL + synchronous=NORMAL: readers/writers don't block each other, and
     # a commit is a cheap WAL append rather than a full fsync of the main
@@ -709,6 +852,55 @@ def open_mbtiles(path: Path) -> sqlite3.Connection:
     conn.execute("CREATE TABLE IF NOT EXISTS metadata (name TEXT, value TEXT)")
     conn.commit()
     _migrate_metadata_table(conn)
+    return conn
+
+
+# One sqlite3.Connection object must never be called concurrently from more
+# than one thread -- not even with check_same_thread=False, which only
+# lifts Python's own "created on thread X, used on thread X" restriction,
+# and not even in WAL mode, which is about multiple *separate* connections
+# not blocking each other, not about one connection's internal cursor/
+# statement state being safe to touch from two threads at once. A previous
+# version of this script got this specific thing wrong (see open_mbtiles's
+# docstring) and derive_zoom_from_child's worker threads, all calling
+# read_tile_and_mask on the one shared writer connection, hit exactly the
+# failure this causes on the real build: sqlite3.InterfaceError("bad
+# parameter or other API misuse"), nondeterministically, only once derive
+# mode's worker pool actually ran (never exercised before -- the only
+# previous builds were either --overview-mode rewarp, which has no derive
+# step, or predated average mode entirely).
+#
+# Fix: every *read* a worker thread issues goes through its own private,
+# read-only connection instead, opened lazily per (thread, path) here. A
+# read-only connection can never be the source of a write/read race in the
+# first place (SQLite refuses writes on it outright), and giving each
+# thread its own object sidesteps the single-connection-concurrency rule
+# entirely rather than trying to work around it. The one WRITER connection
+# (open_mbtiles's return value) is untouched by this and remains exactly
+# as before: used only by the single thread driving each zoom's top-level
+# control flow, never from inside a worker.
+_read_connections = threading.local()
+
+
+def get_read_connection(path: Path) -> sqlite3.Connection:
+    """A read-only sqlite3 connection to `path`, private to the calling
+    thread, created on first use and reused for the rest of that thread's
+    life. See the module-level note above this function for why a
+    dedicated read-only connection per thread, not the shared writer
+    connection, is required here."""
+    cache = getattr(_read_connections, "by_path", None)
+    if cache is None:
+        cache = {}
+        _read_connections.by_path = cache
+    conn = cache.get(path)
+    if conn is None:
+        # uri=True + "mode=ro": SQLite enforces this at the OS/VFS level
+        # (the file is opened without write access), not just by
+        # convention -- an accidental write attempt on this connection
+        # raises rather than silently mutating the database a worker
+        # thread should never be touching.
+        conn = sqlite3.connect(f"file:{path}?mode=ro", uri=True, timeout=60.0)
+        cache[path] = conn
     return conn
 
 
@@ -747,6 +939,35 @@ def _migrate_metadata_table(conn: sqlite3.Connection) -> None:
     conn.commit()
 
 
+def check_tile_format_resume_guard(
+    conn: sqlite3.Connection, requested_format: str, path: Path
+) -> None:
+    """Refuse to resume into an existing MBTiles built with a different
+    --tile-format. The `tiles` table's BLOB column carries no per-row tag
+    saying which codec its bytes are in -- only the one archive-wide
+    `format` metadata value does -- so mixing formats across a resumed
+    build would produce an archive that silently has some rows a reader
+    cannot actually decode as whatever `format` claims for the whole
+    thing. Checked before set_mbtiles_metadata would otherwise overwrite
+    the old `format` value with the new one and hide the mismatch
+    entirely.
+    """
+    row = conn.execute("SELECT value FROM metadata WHERE name='format'").fetchone()
+    if row is None:
+        return  # a brand-new database; nothing to conflict with
+    existing_format = row[0]
+    if existing_format != requested_format:
+        sys.exit(
+            f"{path} already has tiles built with --tile-format "
+            f"{existing_format}, but this run asked for "
+            f"{requested_format}. Refusing to resume: one archive cannot "
+            f"mix tile formats. Use --tile-format {existing_format} to "
+            f"keep resuming this file, or point --output/--mbtiles/"
+            f"--db-path at a fresh path to build {requested_format} "
+            f"from scratch."
+        )
+
+
 def set_mbtiles_metadata(conn: sqlite3.Connection, **kv) -> None:
     for k, v in kv.items():
         conn.execute(
@@ -780,8 +1001,16 @@ def write_tile(
     )
 
 
-def read_tile_and_mask(conn: sqlite3.Connection, z: int, x: int, y: int):
-    """(elevation float32 array, void_mask bool array), or None if absent."""
+def read_tile_and_mask(path: Path, z: int, x: int, y: int):
+    """(elevation float32 array, void_mask bool array), or None if absent.
+
+    Takes the MBTiles *path*, not a Connection: this is called from
+    worker threads (derive_zoom_from_child's derive_one) as well as the
+    main thread (--verify), and must use get_read_connection's per-thread
+    read-only connection rather than any single shared Connection object
+    -- see that function's docstring.
+    """
+    conn = get_read_connection(path)
     tile_row = ((1 << z) - 1) - y
     row = conn.execute(
         "SELECT tile_data FROM tiles WHERE zoom_level=? AND tile_column=? AND tile_row=?",
@@ -978,6 +1207,7 @@ def build_zoom_rewarp(
     quantize: bool,
     committer: CommitScheduler,
     fill_voids: bool = True,
+    tile_format: str = "png",
 ) -> tuple[int, int, int]:
     """Returns (written, already_done, failed_cell_count)."""
     done = set() if force else existing_tiles_for_zoom(conn, z)
@@ -1027,7 +1257,7 @@ def build_zoom_rewarp(
             if quantize:
                 elev = quantize_elevation(elev, z)
             void_cache[xy] = void
-            ef = encode_pool.submit(lambda e=elev: png_bytes(encode_terrarium(e)))
+            ef = encode_pool.submit(lambda e=elev: encode_tile_bytes(encode_terrarium(e), tile_format))
             pending_encode.append((ef, xy))
 
         def finalize(xy: tuple[int, int]) -> None:
@@ -1124,10 +1354,12 @@ def derive_zoom_from_child(
     z: int,
     child_z: int,
     conn: sqlite3.Connection,
+    path: Path,
     workers: int,
     force: bool,
     quantize: bool,
     committer: CommitScheduler,
+    tile_format: str = "png",
 ) -> tuple[int, int]:
     """Build zoom z purely from the already-built zoom child_z (= z+1) in
     the same MBTiles -- no source reads, no network. Returns (written,
@@ -1153,7 +1385,13 @@ def derive_zoom_from_child(
     t0 = time.time()
 
     def read_child(cx: int, cy: int):
-        return read_tile_and_mask(conn, child_z, cx, cy)
+        # Runs inside derive_one, which run_bounded submits to a worker
+        # pool -- read_tile_and_mask must use its own per-thread read-only
+        # connection here, never the shared writer `conn` above (which is
+        # only ever touched by this function's own top-level, single-
+        # -threaded code, e.g. the existing_tiles_for_zoom/child_rows
+        # queries just above). See get_read_connection's docstring.
+        return read_tile_and_mask(path, child_z, cx, cy)
 
     def derive_one(parent) -> tuple:
         px, py = parent
@@ -1176,11 +1414,31 @@ def derive_zoom_from_child(
 
     done_n = 0
 
+    failed_parents = 0
+
     def on_result(parent, fut) -> None:
-        nonlocal written, done_n
+        nonlocal written, done_n, failed_parents
         done_n += 1
-        parent_xy, elev, void = fut.result()
-        write_tile(conn, z, parent_xy[0], parent_xy[1], png_bytes(encode_terrarium(elev)), void)
+        try:
+            parent_xy, elev, void = fut.result()
+        except Exception as exc:  # noqa: BLE001 - a future must never kill the run
+            # Same policy as build_zoom_rewarp's on_result: a tile that
+            # failed to derive is simply never written -- absent from the
+            # MBTiles, not finalized with wrong/partial data -- and a
+            # rerun redoes exactly it (and only it), since
+            # existing_tiles_for_zoom only ever sees tiles that were
+            # actually committed. Resume state is never poisoned by this,
+            # because nothing below (write_tile, committer.tick) runs for
+            # a failed parent; this except clause exists so one bad tile
+            # does not take the rest of the zoom's derivation down with
+            # it, which -- before this fix -- it did (fut.result() ran
+            # unguarded here, unlike the already-hardened rewarp path).
+            failed_parents += 1
+            log(f"  WARNING: z{z} tile {parent} failed to derive, leaving "
+                f"it unfinished this run: {exc}")
+            return
+        write_tile(conn, z, parent_xy[0], parent_xy[1],
+                   encode_tile_bytes(encode_terrarium(elev), tile_format), void)
         written += 1
         committer.tick()
         if done_n % 500 == 0 or done_n == len(parents):
@@ -1188,14 +1446,17 @@ def derive_zoom_from_child(
             log(f"  z{z}: {done_n}/{len(parents)} tile(s) derived ({rate:.1f}/s)")
 
     # derive_one runs in run_bounded's own worker threads and only *reads*
-    # from `conn` (read_tile_and_mask); on_result, which does the only
-    # writing, runs on the thread driving run_bounded's wait() loop -- the
-    # same single-writer/many-reader split open_mbtiles's WAL mode and
-    # check_same_thread=False are set up for.
+    # -- via read_child/read_tile_and_mask's own private, per-thread,
+    # read-only connection (get_read_connection), never the shared writer
+    # `conn` above. on_result, which does the only writing, runs on the
+    # thread driving run_bounded's wait() loop.
     window = max(4 * workers, 1)
     run_bounded(list(parents), derive_one, on_result, workers, window)
 
     committer.flush()
+    if failed_parents:
+        log(f"  z{z}: {failed_parents} tile(s) could not be derived this "
+            f"run; rerun to retry")
     return written, len(done)
 
 
@@ -1203,8 +1464,37 @@ def derive_zoom_from_child(
 # verify
 # --------------------------------------------------------------------------
 
+def _webp_roundtrip_check(path: Path, z: int, x: int, y: int) -> tuple[bool, str]:
+    """WebP is only useful here if it is actually lossless: re-encode the
+    exact RGB this tile decoded to, through the same encode_tile_bytes
+    path the real build used, and decode that back -- every byte of every
+    channel must come back identical, since any difference would be a
+    terrarium-precision error (a wrong meter, not just a compression
+    artifact) once decode_terrarium runs on it. Returns (ok, note).
+
+    Takes `path`, not a Connection (consistent with read_tile_and_mask,
+    and for the same reason: nothing here should ever touch the shared
+    writer connection, even though this particular call only ever runs
+    single-threaded from --verify's own loop today)."""
+    conn = get_read_connection(path)
+    tile_row = ((1 << z) - 1) - y
+    row = conn.execute(
+        "SELECT tile_data FROM tiles WHERE zoom_level=? AND tile_column=? AND tile_row=?",
+        (z, x, tile_row),
+    ).fetchone()
+    if row is None:
+        return False, "tile not found for webp round-trip check"
+    original_rgb = np.array(Image.open(io.BytesIO(row[0])).convert("RGB"))
+    roundtrip_bytes = encode_tile_bytes(original_rgb, "webp")
+    roundtrip_rgb = np.array(Image.open(io.BytesIO(roundtrip_bytes)).convert("RGB"))
+    if np.array_equal(original_rgb, roundtrip_rgb):
+        return True, "webp round-trip: bit-identical RGB, confirmed lossless"
+    diff = int(np.abs(original_rgb.astype(np.int16) - roundtrip_rgb.astype(np.int16)).max())
+    return False, f"webp round-trip FAILED: max channel diff {diff} (should be 0, lossless)"
+
+
 def verify_mbtiles_tile(
-    conn: sqlite3.Connection,
+    path: Path,
     z: int,
     x: int,
     y: int,
@@ -1212,6 +1502,7 @@ def verify_mbtiles_tile(
     tolerance_m: float,
     is_rewarped: bool,
     fill_voids: bool = False,
+    tile_format: str = "png",
 ) -> bool:
     """Decode (z,x,y) from the MBTiles and compare a few pixels against a
     fresh, independent GDAL read+warp of the source COG at the same grid.
@@ -1251,11 +1542,16 @@ def verify_mbtiles_tile(
     gdal.UseExceptions()
     apply_vsicurl_env()
 
-    found = read_tile_and_mask(conn, z, x, y)
+    found = read_tile_and_mask(path, z, x, y)
     if found is None:
         log(f"verify: tile z{z}/{x}/{y} not found in MBTiles")
         return False
     decoded, _decoded_void = found
+
+    webp_ok, webp_note = True, ""
+    if tile_format == "webp":
+        webp_ok, webp_msg = _webp_roundtrip_check(path, z, x, y)
+        webp_note = f" | {webp_msg}"
 
     left, bottom, right, top = mercantile.xy_bounds(x, y, z)
     src_ds = gdal.Open(f"/vsicurl/{url}")
@@ -1336,11 +1632,11 @@ def verify_mbtiles_tile(
         max_diff = float(np.abs(decoded).max())
         note = " (this cell has no source data anywhere in this tile; checked 0-fill instead)"
         effective_tolerance = tolerance_m
-        ok = max_diff <= effective_tolerance
+        ok = (max_diff <= effective_tolerance) and webp_ok
         log(f"verify: z{z}/{x}/{y} (rewarped): max sampled "
             f"|decoded - direct-read| = {max_diff:.4f} m "
             f"(tolerance {effective_tolerance:.4f} m) -> "
-            f"{'OK' if ok else 'FAIL'}{note}")
+            f"{'OK' if ok else 'FAIL'}{note}{webp_note}")
         return ok
     elif not diffs:
         # A derived tile can be legitimately non-zero even where a single
@@ -1360,8 +1656,8 @@ def verify_mbtiles_tile(
             f"source data at this zoom, but the archive may still "
             f"correctly carry data from "
             f"{'GLO-30 void-filling' if is_rewarped else 'box-averaging deeper zooms'}"
-            f"; not treated as a failure{fill_note}")
-        return fill_sanity_ok
+            f"; not treated as a failure{fill_note}{webp_note}")
+        return fill_sanity_ok and webp_ok
     else:
         max_diff = max(diffs)
         kind = "interior" if len(interior_valid) else "boundary-adjacent"
@@ -1370,11 +1666,11 @@ def verify_mbtiles_tile(
         relative = RELATIVE_TOLERANCE if is_rewarped else RELATIVE_TOLERANCE_AVERAGED
         effective_tolerance = max(tolerance_m, tile_resolution_m * relative)
 
-    ok = (max_diff <= effective_tolerance) and fill_sanity_ok
+    ok = (max_diff <= effective_tolerance) and fill_sanity_ok and webp_ok
     log(f"verify: z{z}/{x}/{y} ({'rewarped' if is_rewarped else 'derived'}): "
         f"max sampled |decoded - direct-read| = {max_diff:.4f} m "
         f"(tolerance {effective_tolerance:.4f} m) -> "
-        f"{'OK' if ok else 'FAIL'}{note}{fill_note}")
+        f"{'OK' if ok else 'FAIL'}{note}{fill_note}{webp_note}")
     return ok
 
 
@@ -1423,6 +1719,14 @@ def main() -> int:
                    help="disable filling GEM-15 voids from Copernicus "
                         "GLO-30 (the default); voids stay a flat 0 m, as "
                         "before this feature existed")
+    p.add_argument("--tile-format", choices=["png", "webp"], default="png",
+                   help="png (default): universally supported. webp: "
+                        "lossless (bit-identical elevation, verified by "
+                        "--verify), measured ~27%% smaller than quantized "
+                        "PNG on the smoke cell -- see encode_tile_bytes "
+                        "for the method-vs-size/speed measurements this "
+                        "default was picked from. Not yet the default "
+                        "here: a MapLibre-side decision, pending.")
     p.add_argument("--force", action="store_true",
                    help="rebuild tiles already present in the MBTiles")
     p.add_argument("--skip-convert", action="store_true",
@@ -1458,7 +1762,8 @@ def main() -> int:
         sys.exit("no cells matched --cells/--bbox")
     log(f"{len(cells)} cell(s) selected, band={args.band}, "
         f"overview-mode={args.overview_mode}, quantize={quantize}, "
-        f"fill_voids={fill_voids}, z{args.minzoom}-z{args.maxzoom}")
+        f"fill_voids={fill_voids}, tile_format={args.tile_format}, "
+        f"z{args.minzoom}-z{args.maxzoom}")
 
     if args.mbtiles:
         mbtiles_path = args.mbtiles
@@ -1467,6 +1772,7 @@ def main() -> int:
     else:
         mbtiles_path = args.output.with_suffix(".mbtiles")
     conn = open_mbtiles(mbtiles_path)
+    check_tile_format_resume_guard(conn, args.tile_format, mbtiles_path)
     committer = CommitScheduler(conn, args.commit_every_tiles, args.commit_every_seconds)
 
     west = min(c.bbox[0] for c in cells)
@@ -1491,7 +1797,7 @@ def main() -> int:
     set_mbtiles_metadata(
         conn,
         name=f"gem-15-{args.band}-terrarium",
-        format="png",
+        format=args.tile_format,
         type="baselayer",
         version="1.0.0",
         description=description,
@@ -1525,7 +1831,7 @@ def main() -> int:
             written, already, failed = build_zoom_rewarp(
                 z, cells, args.band, conn, args.workers, encode_workers,
                 args.window_multiplier, args.force, quantize, committer,
-                fill_voids=fill_voids,
+                fill_voids=fill_voids, tile_format=args.tile_format,
             )
             total_written += written
             total_failed_cells += failed
@@ -1534,7 +1840,7 @@ def main() -> int:
         written, already, failed = build_zoom_rewarp(
             args.maxzoom, cells, args.band, conn, args.workers, encode_workers,
             args.window_multiplier, args.force, quantize, committer,
-            fill_voids=fill_voids,
+            fill_voids=fill_voids, tile_format=args.tile_format,
         )
         total_written += written
         total_failed_cells += failed
@@ -1542,7 +1848,8 @@ def main() -> int:
 
         for z in range(args.maxzoom - 1, args.minzoom - 1, -1):
             written, already = derive_zoom_from_child(
-                z, z + 1, conn, args.workers, args.force, quantize, committer,
+                z, z + 1, conn, mbtiles_path, args.workers, args.force, quantize, committer,
+                tile_format=args.tile_format,
             )
             total_written += written
             maybe_verify(z, bool(written or already), is_rewarped=False)
@@ -1553,7 +1860,8 @@ def main() -> int:
     all_ok = True
     for z, x, y, url, is_rewarped in verify_tiles:
         ok = verify_mbtiles_tile(
-            conn, z, x, y, url, args.verify_tolerance_m, is_rewarped, fill_voids=fill_voids
+            mbtiles_path, z, x, y, url, args.verify_tolerance_m, is_rewarped,
+            fill_voids=fill_voids, tile_format=args.tile_format,
         )
         all_ok = all_ok and ok
 
