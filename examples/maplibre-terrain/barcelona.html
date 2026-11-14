@@ -1,0 +1,329 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<title>GEM-15 Barcelona terrain demo</title>
+
+<!--
+  Phone-friendly single-page demo of the GEM-15 terrain over Barcelona.
+
+  This page reads one asset: a terrarium-encoded elevation PMTiles archive
+  covering Barcelona (z0-14).
+
+  WHY THIS POINTS AT source.coop AND NOT A GITHUB RELEASE ASSET:
+  A GitHub release asset serves HTTP range requests, but it sends no CORS
+  headers and its CORS preflight (OPTIONS) returns 405. A browser's
+  pmtiles protocol handler does a cross-origin fetch with a `Range`
+  header, which is not CORS-safelisted, so the browser blocks every tile
+  request. A GitHub release asset cannot host tiles for a browser client.
+
+  The demo archive is published at the catalog's own address:
+  https://data.source.coop/portolan-mirrors/gem-15-catalog/gem-15/terrain/gem-15-dsm-terrarium-demo-barcelona.pmtiles
+  The banner below appears only if that address stops answering.
+
+  Dependencies, pinned from unpkg, same versions as the catalog's own
+  examples/maplibre-terrain/index.html:
+  - pmtiles 4.5.0, dist/pmtiles.js (IIFE build, sets a global `pmtiles`).
+  - maplibre-gl 6.18.0, dist/maplibre-gl.mjs (ESM only, named exports).
+  The pmtiles global is registered as a protocol BEFORE the style loads.
+-->
+<link rel="stylesheet" href="https://unpkg.com/maplibre-gl@6.18.0/dist/maplibre-gl.css">
+<script src="https://unpkg.com/pmtiles@4.5.0/dist/pmtiles.js"></script>
+
+<style>
+  :root {
+    --panel-bg: rgba(255, 255, 255, 0.95);
+    --ink: #1c2529;
+    --muted: #5a666d;
+    --line: #d2dade;
+    --accent: #2f6f8f;
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { margin: 0; height: 100%; overflow: hidden; }
+  body {
+    font: 14px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    color: var(--ink);
+  }
+  #map { position: absolute; inset: 0; touch-action: none; }
+
+  .panel {
+    position: absolute;
+    top: max(12px, env(safe-area-inset-top));
+    left: 12px;
+    right: 12px;
+    z-index: 2;
+    max-width: 320px;
+    max-height: 46%;
+    overflow-y: auto;
+    padding: 12px 14px 14px;
+    background: var(--panel-bg);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    box-shadow: 0 2px 14px rgba(0, 0, 0, 0.18);
+    -webkit-overflow-scrolling: touch;
+  }
+  .panel h1 { margin: 0 0 2px; font-size: 15px; }
+  .panel .sub { margin: 0 0 10px; color: var(--muted); font-size: 12px; }
+  .panel h2 {
+    margin: 12px 0 6px;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.07em;
+    color: var(--muted);
+  }
+  .row { display: flex; align-items: center; gap: 8px; }
+  .row label { flex: 1; }
+  input[type="checkbox"] { width: 20px; height: 20px; }
+  input[type="range"] { width: 100%; height: 28px; }
+  .val { font-variant-numeric: tabular-nums; color: var(--muted); min-width: 2.4em; text-align: right; }
+  .note { margin: 10px 0 0; font-size: 11.5px; color: var(--muted); }
+  .note a { color: var(--accent); }
+  fieldset { border: 0; margin: 0; padding: 0; }
+  fieldset[disabled] { opacity: 0.45; }
+
+  #banner {
+    position: absolute;
+    top: max(12px, env(safe-area-inset-top));
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 3;
+    display: none;
+    max-width: 90%;
+    width: 360px;
+    padding: 12px 16px;
+    background: #fff6e5;
+    border: 1px solid #e0b25f;
+    border-left: 4px solid #d9893b;
+    border-radius: 6px;
+    box-shadow: 0 2px 12px rgba(0, 0, 0, 0.18);
+  }
+  #banner.show { display: block; }
+  #banner strong { display: block; margin-bottom: 4px; }
+  #banner p { margin: 0; font-size: 12.5px; color: #5c4420; }
+  #banner a { color: #8a5214; }
+
+  @media (min-width: 640px) {
+    .panel { right: auto; width: 300px; }
+  }
+</style>
+</head>
+<body>
+
+<div id="map"></div>
+
+<div id="banner" role="status" aria-live="polite">
+  <strong>The GEM-15 elevation tiles are not published yet.</strong>
+  <p>
+    This page reads the terrain PMTiles from the
+    <a href="https://source.coop/portolan-mirrors/gem-15-catalog" target="_blank" rel="noopener">gem-15-catalog</a>
+    Collection on Source Cooperative. That Collection has not had its first
+    data publish, so this address answers 404 today. The map controls below
+    still work, and the page draws the terrain as soon as the asset is
+    there. Nothing has to change on this page when the data lands.
+  </p>
+</div>
+
+<div class="panel">
+  <h1>GEM-15 terrain, Barcelona</h1>
+  <p class="sub">A Portolan <code>raster-dem</code> demo, drawn by MapLibre GL JS.</p>
+
+  <h2>3D terrain</h2>
+  <div class="row">
+    <label for="terrain-toggle">Raise the terrain</label>
+    <input type="checkbox" id="terrain-toggle" checked>
+  </div>
+  <fieldset id="exaggeration-field">
+    <div class="row">
+      <label for="exaggeration">Exaggeration</label>
+      <span class="val" id="exaggeration-value">1.3</span>
+    </div>
+    <input type="range" id="exaggeration" min="0" max="4" step="0.1" value="1.3">
+  </fieldset>
+
+  <p class="note">
+    GEM-15 is a 15 m surface model, so Barcelona's city blocks rise from the
+    terrain. Elevations are meters above the EGM96 geoid.
+  </p>
+  <p class="note">
+    This dataset is produced by Google, licensed
+    <a href="https://creativecommons.org/licenses/by/4.0/" target="_blank" rel="noopener">CC-BY-4.0</a>.
+    Catalog: <a href="https://source.coop/portolan-mirrors/gem-15-catalog" target="_blank" rel="noopener">gem-15-catalog</a>.
+    Paper: <a href="https://doi.org/10.31223/X55N75" target="_blank" rel="noopener">doi:10.31223/X55N75</a>.
+  </p>
+</div>
+
+<script type="module">
+import * as maplibregl from 'https://unpkg.com/maplibre-gl@6.18.0/dist/maplibre-gl.mjs';
+
+// ---------------------------------------------------------------------------
+// The asset
+// ---------------------------------------------------------------------------
+
+// The catalog's published address for the Barcelona demo PMTiles.
+const TERRAIN_PMTILES =
+  'https://data.source.coop/portolan-mirrors/gem-15-catalog/gem-15/terrain/gem-15-dsm-terrarium-demo-barcelona.pmtiles';
+
+const ATTRIBUTION =
+  'This dataset is produced by Google | CC-BY-4.0 | ' +
+  '<a href="https://source.coop/portolan-mirrors/gem-15-catalog" target="_blank" rel="noopener">gem-15-catalog</a>';
+
+const SOURCE_ID = 'gem15-dsm';
+
+// ---------------------------------------------------------------------------
+// The hypsometric ramp. Matches the catalog's hypsometric.json. Each stop is
+// meters above the EGM96 geoid. GEM-15 writes NaN and ocean alike as 0 m, so
+// the 0 m stop doubles as the water tone and the no-data tone.
+// ---------------------------------------------------------------------------
+
+const ELEVATION_RAMP = [
+  -430, '#0f3d2e', -5, '#1d5c42', 0, '#5d7f93', 1, '#2d6a3f',
+  100, '#4e8c4a', 300, '#7aa85a', 600, '#a8c06a', 900, '#cfcf7d',
+  1200, '#e2cf8c', 1600, '#d8b074', 2000, '#c0905c', 2400, '#a4744a',
+  2800, '#8a5c3e', 3200, '#745038', 3600, '#6d5b50', 4200, '#8a7d74',
+  4800, '#a99d95', 5400, '#c9c0ba', 6000, '#e6e2df', 6800, '#ffffff',
+  8849, '#ffffff',
+];
+
+function builtinStyle() {
+  return {
+    version: 8,
+    name: 'GEM-15 Barcelona terrain demo',
+    sources: {
+      [SOURCE_ID]: {
+        type: 'raster-dem',
+        // The pmtiles protocol reads everything after pmtiles:// as the
+        // archive URL. Absolute, since this page loads the style inline
+        // rather than fetching it from an object store.
+        url: `pmtiles://${TERRAIN_PMTILES}`,
+        encoding: 'terrarium',
+        tileSize: 256,
+        minzoom: 0,
+        maxzoom: 14,
+        attribution: ATTRIBUTION,
+      },
+    },
+    layers: [
+      { id: 'background', type: 'background', paint: { 'background-color': '#36454f' } },
+      {
+        id: 'elevation-tint',
+        type: 'color-relief',
+        source: SOURCE_ID,
+        paint: {
+          'color-relief-color': ['interpolate', ['linear'], ['elevation'], ...ELEVATION_RAMP],
+        },
+      },
+      {
+        id: 'hillshade',
+        type: 'hillshade',
+        source: SOURCE_ID,
+        paint: {
+          // The igor method keeps the tint legible under the shading. The
+          // hillshade layer has no opacity property, so translucent shadow
+          // and highlight colors reduce the shading instead.
+          'hillshade-method': 'igor',
+          'hillshade-exaggeration': 0.5,
+          'hillshade-illumination-direction': 335,
+          'hillshade-shadow-color': 'rgba(24, 22, 18, 0.55)',
+          'hillshade-highlight-color': 'rgba(255, 253, 245, 0.25)',
+          'hillshade-accent-color': 'rgba(0, 0, 0, 0)',
+        },
+      },
+    ],
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Set up
+// ---------------------------------------------------------------------------
+
+// This call adds pmtiles:// support to MapLibre, before the style loads.
+// The registration is global to the library.
+const protocol = new pmtiles.Protocol();
+maplibregl.addProtocol('pmtiles', protocol.tile);
+
+const map = new maplibregl.Map({
+  container: 'map',
+  style: builtinStyle(),
+  center: [2.17, 41.4],
+  zoom: 11,
+  pitch: 60,
+  bearing: 0,
+  maxPitch: 85,
+  hash: true,
+  // The archive stops at z14, about the native 15 m resolution over
+  // Barcelona. MapLibre overzooms past that rather than requesting tiles
+  // that do not exist.
+  maxZoom: 18,
+  touchZoomRotate: true,
+  touchPitch: true,
+  cooperativeGestures: false,
+});
+
+map.addControl(new maplibregl.NavigationControl({ visualizePitch: true }), 'top-right');
+map.addControl(new maplibregl.ScaleControl({ unit: 'metric' }), 'bottom-right');
+map.addControl(new maplibregl.AttributionControl({ compact: true }), 'bottom-right');
+
+// ---------------------------------------------------------------------------
+// The case where the data is not published yet
+// ---------------------------------------------------------------------------
+
+const banner = document.getElementById('banner');
+
+function showBanner() {
+  banner.classList.add('show');
+}
+
+// A pmtiles archive starts with a 127 byte header. A short range request
+// checks that the asset exists and that range requests work at all.
+async function checkArchive() {
+  try {
+    const res = await fetch(TERRAIN_PMTILES, { headers: { Range: 'bytes=0-15' } });
+    if (!res.ok) showBanner();
+  } catch {
+    showBanner();
+  }
+}
+checkArchive();
+
+map.on('error', (e) => {
+  console.warn('MapLibre error:', e && e.error ? e.error.message : e);
+  showBanner();
+});
+
+// ---------------------------------------------------------------------------
+// 3D terrain and exaggeration
+// ---------------------------------------------------------------------------
+
+const terrainToggle = document.getElementById('terrain-toggle');
+const exaggerationField = document.getElementById('exaggeration-field');
+const exaggeration = document.getElementById('exaggeration');
+const exaggerationValue = document.getElementById('exaggeration-value');
+
+function applyTerrain() {
+  const on = terrainToggle.checked;
+  exaggerationField.disabled = !on;
+  exaggerationValue.textContent = Number(exaggeration.value).toFixed(1);
+
+  if (!map.getSource(SOURCE_ID)) return;
+
+  if (on) {
+    map.setTerrain({ source: SOURCE_ID, exaggeration: Number(exaggeration.value) });
+  } else {
+    map.setTerrain(null);
+  }
+}
+
+terrainToggle.addEventListener('change', () => {
+  applyTerrain();
+  if (terrainToggle.checked && map.getPitch() < 25) {
+    map.easeTo({ pitch: 60, duration: 700 });
+  }
+});
+
+exaggeration.addEventListener('input', applyTerrain);
+
+map.on('load', applyTerrain);
+</script>
+</body>
+</html>
