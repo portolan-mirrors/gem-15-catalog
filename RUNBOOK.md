@@ -61,9 +61,13 @@ python3 -c "from osgeo import gdal, osr; print(osr.SpatialReference().ImportFrom
 ```
 
 **Void-filling (step 3, on by default) needs two PROJ geoid grids**
-(`us_nga_egm2008_1`, `us_nga_egm96_15`) that conda-forge's `proj` package
-does not bundle. `build_terrain.py` fetches them over the network the
-first time it runs, which needs `PROJ_NETWORK=ON`:
+(`us_nga_egm08_25`, `us_nga_egm96_15` -- verified against `projsync
+--list-files`, 2026-11-15; an earlier draft of this runbook named
+`us_nga_egm2008_1`, which does not exist in PROJ's catalog at all and
+would make `projsync` fail outright with a confusing "not found") that
+conda-forge's `proj` package does not bundle. `build_terrain.py` fetches
+them over the network the first time it runs, which needs
+`PROJ_NETWORK=ON`:
 
 ```bash
 export PROJ_NETWORK=ON
@@ -72,25 +76,75 @@ export PROJ_NETWORK=ON
 or, if the compute nodes have no outbound internet access (common on an
 HPC cluster -- check before assuming either way), pre-fetch them once
 while network access is available and point `PROJ_DATA` at a directory
-that has them:
+that has them. `us_nga_egm08_25.tif` is 80.5 MB (world coverage, 2.5
+arcmin); `us_nga_egm96_15.tif` is 2.7 MB:
 
 ```bash
-projsync --file us_nga_egm2008_1.tif --file us_nga_egm96_15.tif --target-dir "$CONDA_PREFIX/share/proj"
+projsync --file us_nga_egm08_25.tif --file us_nga_egm96_15.tif --target-dir "$CONDA_PREFIX/share/proj"
 ```
 
 `build_terrain.py` checks this itself, once, before any build work
 (`check_void_fill_prerequisites`), and exits with a clear message instead
 of ever filling a void with an unconverted height if the grids are not
-reachable either way. `--no-void-fill` skips the check and the whole
-feature, if that is ever the intent.
+reachable either way. The check does not just ask PROJ for a number and
+trust it: PROJ's default behavior when the real grid-based transformation
+is unavailable is to silently substitute a "ballpark" (uncorrected,
+literally `+proj=noop`) one instead of raising, which returns an exact,
+finite 0.0 m everywhere -- confirmed by reproducing it directly (grids
+hidden, `PROJ_NETWORK=OFF`): a naive "is the result a finite number" check
+passes on exactly that bad case. The fix is `allow_ballpark=False` on the
+`Transformer` (which turns that case into a loud `ProjError` instead),
+plus two more belt-and-braces checks in case some other PROJ/pyproj
+version ever lets a ballpark operation through anyway despite that flag:
+inspecting the selected transformation's own `.description` for the
+literal string "ballpark" (PROJ's own wording, confirmed with `projinfo -s
+EPSG:3855 -t EPSG:5773`), and rejecting an exact `0.0` result at the
+startup probe point specifically (the true offset at 0N,0E is +0.064 m,
+confirmed below -- never exactly zero). `--no-void-fill` skips the check
+and the whole feature, if that is ever the intent.
 
 ```bash
 python3 -c "
 from pyproj import Transformer
-t = Transformer.from_crs('EPSG:4326+3855', 'EPSG:4326+5773', always_xy=True)
-print(t.transform(2.40, 41.97, 0.0))  # should print a small offset, not an error
+t = Transformer.from_crs('EPSG:4326+3855', 'EPSG:4326+5773', always_xy=True, allow_ballpark=False)
+print(t.description)                  # must NOT contain 'ballpark'
+print(t.transform(0.0, 0.0, 0.0))     # (0.0, 0.0, 0.0635...) -- +0.064 m, not exactly 0
+print(t.transform(2.40, 41.97, 0.0))  # Sau reservoir: +0.124 m
 "
 ```
+
+**Landmine: conda-forge's `pyproj` wheel bundles its own `proj.db`, and it
+wins over `PROJ_DATA`.** pyproj's internal data-directory lookup checks
+its own bundled `proj_dir/share/proj` *before* `PROJ_DATA`/`PROJ_LIB`, so
+setting either of those (the fix earlier in this section, for the
+rasterio/GDAL mismatch) does not necessarily change what `pyproj`
+specifically uses -- only what `osgeo.gdal`/`rasterio` use. If the
+bundled `proj.db`'s schema version doesn't match the environment's own
+`libproj` (measured on the build server: pyproj 3.8.0 bundling `proj.db`
+9.8.1 against a `libproj` 9.9.0 from conda-forge's `proj` package), every
+CRS lookup through pyproj breaks -- not just void-filling, since
+`check_void_fill_prerequisites` is simply the first thing in this
+pipeline that happens to touch a compound CRS construction, and a
+version-mismatched `proj.db` throwing on that is the same failure family
+documented for rasterio above, just inside a different package.
+**Symptom**: a `pyproj.exceptions.CRSError` or a PROJ "database layout
+version" error even with `PROJ_NETWORK=ON` and real grids reachable, that
+does not go away when `PROJ_DATA` is set correctly. **A plain
+`pip install --upgrade pyproj` or `conda install pyproj` re-pins the
+bundled file and can silently restore the stale version** even after
+you've "fixed" it once -- this is why the symptom can reappear after an
+otherwise unrelated environment update. Fix: either move the bundled file
+aside so pyproj falls through to `PROJ_DATA` --
+
+```bash
+PYPROJ_DATA_DIR=$(python3 -c "import pyproj; print(pyproj.datadir.get_data_dir())")
+mv "$PYPROJ_DATA_DIR/proj.db" "$PYPROJ_DATA_DIR/proj.db.bundled-bak"
+```
+
+-- or align versions so there is nothing to shadow (reinstall `pyproj`
+from conda-forge rather than PyPI, matching the environment's own `proj`
+package version, so both read the same `proj.db` in the first place).
+Confirm the fix with the same `allow_ballpark=False` snippet above.
 
 `pmtiles` (the go-pmtiles CLI, used by `build_terrain.py` and for the
 post-publish checks below) is a separate static binary, not a Python

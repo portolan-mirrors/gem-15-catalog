@@ -164,14 +164,29 @@ point on, exactly like the GEM-15 pixel it replaced would have been.
    (EPSG:3855); GEM-15 is EGM96 (EPSG:5773) -- see ``AGENTS.md``'s own
    "Quirks" entry on this for GEM-15 vs. ellipsoidal heights, a related
    but different conversion. Converted via
-   ``pyproj.Transformer.from_crs("EPSG:4326+3855", "EPSG:4326+5773")``,
-   which needs PROJ's ``us_nga_egm2008_1``/``us_nga_egm96_15`` grids
-   (fetched over ``PROJ_NETWORK`` if not already cached locally).
+   ``pyproj.Transformer.from_crs("EPSG:4326+3855", "EPSG:4326+5773",
+   allow_ballpark=False)``, which needs PROJ's ``us_nga_egm08_25``/
+   ``us_nga_egm96_15`` grids (fetched over ``PROJ_NETWORK`` if not already
+   cached locally; verified against ``projsync --list-files``, 2026-11-15
+   -- NOT ``us_nga_egm2008_1``, an earlier draft of this code guessed that
+   name and it does not exist). ``allow_ballpark=False`` matters: without
+   it, PROJ silently substitutes a "ballpark" (uncorrected, literal
+   ``+proj=noop``) transformation when the real grids are unreachable,
+   returning an exact, finite 0.0 m everywhere -- reproduced directly
+   (grids hidden, ``PROJ_NETWORK=OFF``) and confirmed this would have
+   passed the once-weaker "is it a finite number" check and shipped a void
+   fill with silently zero geoid correction.
    ``check_void_fill_prerequisites`` runs this once, at startup, before
-   any build work, and exits with a clear message if it fails --
-   deliberately never falls back to filling with an unconverted height.
+   any build work, and exits with a clear message if it fails -- checking
+   the selected transformation itself (its ``description`` naming
+   "ballpark", confirmed via ``projinfo -s EPSG:3855 -t EPSG:5773`` to be
+   PROJ's own exact wording for this failure) and rejecting an exact 0.0 m
+   result at the startup probe point as a second, belt-and-braces check,
+   rather than trusting ``allow_ballpark=False`` alone -- deliberately
+   never falls back to filling with an unconverted height.
    Measured at the Sau reservoir (2.40E, 41.97N): **+0.124 m**
-   (EGM96 = EGM2008 + 0.124 m there). This is a per-cell constant
+   (EGM96 = EGM2008 + 0.124 m there; also measured at 0N,0E: **+0.064 m**,
+   matching the server operator's own figure). This is a per-cell constant
    (evaluated once, at the cell's bbox centroid, not per pixel): measured
    spread across the 4 Barcelona demo cells is -0.086 m to +0.584 m, so a
    single cell's own internal variation is well under that -- small next
@@ -426,14 +441,61 @@ def glo30_url(west: float, south: float) -> str:
 _egm_transformer = None
 
 
+#: The three ways to make the real geoid grids reachable, named in every
+#: void-fill-prerequisite failure message so the operator does not have to
+#: dig through this module to find them. Verified against the real grid
+#: catalog with `projsync --list-files`, 2026-11-15: the world-coverage
+#: EGM2008 grid is named ``us_nga_egm08_25.tif`` (80.5 MB) -- NOT
+#: ``us_nga_egm2008_1.tif``, which does not exist and would make a fix
+#: attempt based on it fail with a confusing "file not found".
+VOID_FILL_GEOID_FIX_HINT = (
+    "Fix one of: (1) PROJ_NETWORK=ON (streams grids over HTTPS on demand, "
+    "no local copy needed); (2) pre-fetch them once with `projsync "
+    "--file us_nga_egm08_25.tif --file us_nga_egm96_15.tif`; (3) "
+    "PROJ_DATA pointed at a directory that already has them. Or pass "
+    "--no-void-fill to keep the original 0-fill-everything behavior this "
+    "run."
+)
+
+
 def _get_egm_transformer():
     global _egm_transformer
     if _egm_transformer is None:
         from pyproj import Transformer
 
+        # allow_ballpark=False is the real fix: without it, PROJ silently
+        # falls back to a "ballpark vertical transformation" (PROJ string
+        # literally +proj=noop) whenever the real grid-based operation is
+        # unavailable (grids missing, PROJ_NETWORK off) -- reproduced and
+        # confirmed, 2026-11-15: with the grids hidden, the *default*
+        # (allow_ballpark unset) transformer still constructs successfully
+        # and returns an exact, finite 0.0 m everywhere, which passed the
+        # old isfinite-only check below and would have shipped a void fill
+        # with silently zero geoid correction. With allow_ballpark=False,
+        # the same scenario instead raises ProjError at construction time
+        # ("Bad step definition: proj=vgridshift (File not found or
+        # invalid)"), which propagates out of here and is exactly the
+        # loud, early failure check_void_fill_prerequisites wants.
         _egm_transformer = Transformer.from_crs(
-            "EPSG:4326+3855", "EPSG:4326+5773", always_xy=True
+            "EPSG:4326+3855", "EPSG:4326+5773", always_xy=True,
+            allow_ballpark=False,
         )
+        # Belt-and-braces, not the primary defense: if some other PROJ/
+        # pyproj version ever lets construction succeed anyway with a
+        # ballpark operation selected, catch it by inspecting the
+        # transformation PROJ actually picked, not by a magic-value check
+        # on its output. `projinfo -s EPSG:3855 -t EPSG:5773` confirms the
+        # exact string this grids-unavailable case uses: "Transformation
+        # from EGM2008 height to EGM96 height (ballpark vertical
+        # transformation)".
+        description = (_egm_transformer.description or "").lower()
+        if "ballpark" in description:
+            raise RuntimeError(
+                "EGM2008->EGM96 geoid conversion selected a ballpark "
+                "(uncorrected, approximate) transformation despite "
+                f"allow_ballpark=False: {_egm_transformer.description!r}. "
+                + VOID_FILL_GEOID_FIX_HINT
+            )
     return _egm_transformer
 
 
@@ -441,17 +503,18 @@ def egm2008_to_egm96_offset(lon: float, lat: float) -> float:
     """Meters to ADD to a GLO-30 (EGM2008, EPSG:3855) orthometric height to
     get a GEM-15-comparable (EGM96, EPSG:5773) orthometric height, at
     (lon, lat). Raises if the PROJ geoid grids this needs
-    (us_nga_egm2008_1, us_nga_egm96_15) cannot be loaded --
+    (us_nga_egm08_25, us_nga_egm96_15) cannot be loaded, or if PROJ can
+    only offer a ballpark (uncorrected) transformation for them --
     check_void_fill_prerequisites calls this once at startup specifically
-    so a missing grid fails loudly before any build work, never silently
-    per-cell deep inside render_cell_block."""
+    so either failure is loud before any build work, never silent per-cell
+    deep inside render_cell_block."""
     transformer = _get_egm_transformer()
     _, _, offset = transformer.transform(lon, lat, 0.0)
     if offset is None or not math.isfinite(offset):
         raise RuntimeError(
             f"EGM2008->EGM96 geoid conversion returned no usable result at "
-            f"({lon}, {lat}) -- PROJ grids us_nga_egm2008_1/us_nga_egm96_15 "
-            f"are unavailable (no PROJ_NETWORK and not cached locally?)"
+            f"({lon}, {lat}) -- PROJ grids us_nga_egm08_25/us_nga_egm96_15 "
+            f"are unavailable. " + VOID_FILL_GEOID_FIX_HINT
         )
     return offset
 
@@ -465,12 +528,22 @@ def check_void_fill_prerequisites() -> None:
     except Exception as exc:  # noqa: BLE001 - this is the one place that must not retry/continue
         sys.exit(
             "--void-fill (the default) needs a working EGM2008->EGM96 "
-            "geoid conversion (PROJ grids us_nga_egm2008_1 and "
-            f"us_nga_egm96_15), and it failed: {exc}\n"
-            "Fix PROJ_NETWORK/PROJ_DATA, pre-fetch the grids with "
-            "`projsync --file us_nga_egm2008_1.tif --file "
-            "us_nga_egm96_15.tif`, or pass --no-void-fill to keep the "
-            "original 0-fill-everything behavior this run."
+            f"geoid conversion, and it failed: {exc}\n" + VOID_FILL_GEOID_FIX_HINT
+        )
+    # Belt-and-braces, specifically at this probe point: the measured true
+    # offset at 0N,0E is +0.064 m (confirmed with working grids, 2026-11-15
+    # -- matches the figure the server operator reported), never exactly
+    # 0.0. An exact 0.0 here, even if `offset` is finite and even if
+    # _get_egm_transformer's own ballpark check somehow missed it, is only
+    # ever the ballpark fallback's signature (its PROJ string is a literal
+    # no-op), not a genuine result.
+    if offset == 0.0:
+        sys.exit(
+            "--void-fill (the default) needs a working EGM2008->EGM96 "
+            "geoid conversion; the probe at 0N,0E returned exactly 0.0 m, "
+            "which is not a real result (the true offset there is "
+            "+0.064 m) -- this is the signature of PROJ's ballpark "
+            "fallback slipping through. " + VOID_FILL_GEOID_FIX_HINT
         )
     log(f"void-fill: EGM2008->EGM96 geoid conversion OK "
         f"(offset at 0N,0E = {offset:+.3f} m)")
