@@ -109,10 +109,16 @@ the Llobregat plain.
 | Source here | GEM-15 at 15 m | not published per tile | EU-DEM at 30 m |
 
 GEM-15 is the only one of the three that measures the surface. Its heights
-include buildings and canopy, so over a city block or a forest it reads higher
-than the other two, and that gap is signal rather than error. The demo archive
-also quantises to whole metres below zoom 14, measured on the live file, so a
-probe compares numbers at zoom 14 and nowhere shallower.
+include buildings and canopy. Over a city block or a forest it measures the top
+of the surface rather than the ground. A positive difference against a
+bare-earth source there is signal rather than error.
+
+The reverse happens too, so do not read every difference as a model difference.
+A 30 m source smooths a hilltop down and a valley up. At the Barcelona city
+center preset the AWS pane reads 10 m higher than GEM-15, not lower, because
+EU-DEM at 30 m spreads the city over a coarse grid. The demo archive also
+quantises to whole metres below zoom 14, measured on the live file, so a probe
+compares numbers at zoom 14 and nowhere shallower.
 
 ### What was verified about the Mapterhorn archive
 

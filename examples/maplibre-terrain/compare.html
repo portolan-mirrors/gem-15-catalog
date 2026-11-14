@@ -332,13 +332,16 @@
 
   <p class="caveat">
     <b>Read the differences with care.</b>
-    GEM-15 is a digital surface model, so buildings and canopy are part of
-    its height. Over a city block or a forest it reads higher than the two
-    bare-earth sources, and that gap is signal rather than error. The GEM-15
-    demo archive covers the Barcelona box only, and it quantises to whole
-    metres below zoom 14, so compare numbers at zoom 14. The three sources
-    also carry different vertical datums, which puts a metre or two between
-    them even on identical ground.
+    GEM-15 is a digital surface model, so buildings and canopy are part of its
+    height. Over a city block or a forest it measures the top of the surface
+    rather than the ground, so a positive difference against a bare-earth
+    source there is signal rather than error. The reverse happens too: a 30 m
+    source smooths a hilltop down and a valley up, which is a resolution
+    effect and not a disagreement about the model. The GEM-15 demo archive
+    covers the Barcelona box only, and it quantises to whole metres below zoom
+    14, so compare numbers at zoom 14. The three sources also use different
+    vertical datums, which puts a metre or two between them on identical
+    ground.
   </p>
 </header>
 
@@ -690,7 +693,7 @@ function paneStyle(source) {
 const PLACES = [
   {
     label: 'Barcelona center',
-    hint: 'City blocks. GEM-15 holds the roofs, the other two hold the ground.',
+    hint: 'City blocks, where a 15 m surface model and two 30 m sources part company.',
     center: [2.1650, 41.3900], zoom: 15,
   },
   {
