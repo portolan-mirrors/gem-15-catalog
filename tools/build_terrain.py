@@ -113,11 +113,11 @@ Mapterhorn's technique (github.com/mapterhorn/mapterhorn,
 as zoom approaches Mapterhorn's own reference "full terrarium resolution"
 zoom of 19, and capped at exactly 1 m everywhere at or below the zoom where
 the formula would otherwise call for coarser-than-1 m rounding. Over this
-script's z0-z13 range that step table is:
+script's z0-z14 range that step table is:
 
-| zoom | 0-11 | 12 | 13 |
-|---|---|---|---|
-| step (m) | 1.0 | 0.5 | 0.25 |
+| zoom | 0-11 | 12 | 13 | 14 |
+|---|---|---|---|---|
+| step (m) | 1.0 | 0.5 | 0.25 | 0.125 |
 
 Measured on this catalog's own Barcelona demo archive: -54.7% file size,
 invisible to a consumer, since the step at every zoom stays at or below
@@ -125,19 +125,114 @@ that zoom's own meaningful resolution (and far below GEM-15's own several-
 -meter DRMSE; see docs/research/gem15-paper-notes.md). ``--no-quantize``
 disables this for an A/B comparison.
 
+## Void-filling from Copernicus GLO-30 (terrain tiles only)
+
+A GEM-15 masked void (water + a 9 m buffer, snow/ice, a >50 m GLO-30
+outlier, or genuinely no data: see DESIGN.md) renders as a 0 m pit under
+3D terrain -- confirmed, for the Sau reservoir northwest of Barcelona, to
+be faithful rendering of real upstream nodata, not a pipeline bug (see
+DESIGN.md's "Known issues" entry on this). By user decision 2026-11-14,
+**terrain tiles only** (never the item COGs/STAC, never the overview COG,
+which keeps its alpha-transparent voids) fill those pixels from Copernicus
+GLO-30 instead of leaving them as a flat 0 m pit, on by default
+(``--no-void-fill`` to get the old 0-fill-everything behavior back).
+
+This happens once, at ``--maxzoom``, inside ``render_cell_block``, right
+after that cell's own GEM-15 warp -- every zoom this script derives by
+box-averaging (``--overview-mode average``, the default) inherits already
+-filled pixels for free, with no special-casing in the derivation or
+quantization code: a filled pixel just *is* a real elevation from that
+point on, exactly like the GEM-15 pixel it replaced would have been.
+
+1. **The cheap check** (per the design brief): do nothing until GEM-15's
+   own warp for this cell actually has a NaN in it. No separate low-res
+   probe is needed -- that warp already has to happen for the main
+   render, so checking its own NaN mask costs nothing extra, and most
+   cells (GEM-15 masks ~2.5% of cells, and more have *some* NaN, mostly
+   coastline) never fetch GLO-30 at all.
+2. **Fetch.** GLO-30 tiles on AWS Open Data are a strict 1x1-degree grid
+   keyed by SW corner, named ``Copernicus_DSM_COG_10_{N|S}{lat:02d}_00_
+   {E|W}{lon:03d}_00_DEM`` (verified against the GEM-15 cell for the Sau
+   reservoir, N41/E002, which is the exact same 1x1-degree footprint as
+   our own cell naming's south/west edges), over plain HTTPS,
+   unauthenticated (``copernicus-dem-30m.s3.amazonaws.com``, confirmed
+   with a real fetch). Per AWS's own dataset page: "ocean areas do not
+   have tiles" there -- a cell with no land at all simply has no GLO-30
+   tile to fetch, a 404, logged and skipped, not an error: GEM-15's own
+   0-fill is also "flat sea" there, so there is nothing to improve.
+3. **Vertical datum.** GLO-30 heights are orthometric on EGM2008
+   (EPSG:3855); GEM-15 is EGM96 (EPSG:5773) -- see ``AGENTS.md``'s own
+   "Quirks" entry on this for GEM-15 vs. ellipsoidal heights, a related
+   but different conversion. Converted via
+   ``pyproj.Transformer.from_crs("EPSG:4326+3855", "EPSG:4326+5773")``,
+   which needs PROJ's ``us_nga_egm2008_1``/``us_nga_egm96_15`` grids
+   (fetched over ``PROJ_NETWORK`` if not already cached locally).
+   ``check_void_fill_prerequisites`` runs this once, at startup, before
+   any build work, and exits with a clear message if it fails --
+   deliberately never falls back to filling with an unconverted height.
+   Measured at the Sau reservoir (2.40E, 41.97N): **+0.124 m**
+   (EGM96 = EGM2008 + 0.124 m there). This is a per-cell constant
+   (evaluated once, at the cell's bbox centroid, not per pixel): measured
+   spread across the 4 Barcelona demo cells is -0.086 m to +0.584 m, so a
+   single cell's own internal variation is well under that -- small next
+   to GLO-30's own multi-meter accuracy budget, and not worth a per-pixel
+   geoid grid evaluation for every filled cell.
+4. **Resample and feather.** GLO-30 (30 m) is warped to the exact same
+   EPSG:3857 grid as the GEM-15 cell block it is filling (same
+   ``outputBounds``/``width``/``height``, bilinear), so no separate
+   regridding step is needed. Blended toward GEM-15's own nearest valid
+   value over ``VOID_FILL_FEATHER_PX`` (3) pixels at the void boundary
+   (``scipy.ndimage.distance_transform_edt`` for the nearest-valid lookup
+   and the blend weight) rather than dropped in with a hard edge: GLO-30
+   and GEM-15 are independent measurements and can disagree by a few
+   meters right at a shoreline, which a hard edge would show as a visible
+   lip. Pixels more than 3 px from any real GEM-15 data are pure GLO-30
+   (plus the geoid offset).
+5. **If GLO-30 itself has no tile, or the fetch fails**, that cell's
+   voids simply stay as GEM-15 left them (NaN, 0-filled downstream as
+   before) -- logged, not treated as a cell failure (contrast with
+   defect 1's GEM-15 fetch-failure handling: a missing *fill source* is
+   "no improvement available," not "wrong data baked in," since GEM-15's
+   own value, or its absence, is untouched either way).
+
+**Attribution.** Per the Copernicus WorldDEM-30 licence, Article 6(b)
+(modified-data notice; verified by reading the official licence PDF
+directly, 2026-11-14 -- the quote below is its exact text, not a
+paraphrase): the terrain PMTiles' own description must carry:
+
+    produced using Copernicus WorldDEM-30 (c) DLR e.V. 2010-2014 and
+    (c) Airbus Defence and Space GmbH 2014-2018 provided under
+    COPERNICUS by the European Union and ESA; all rights reserved
+
+See DESIGN.md for where this is recorded in the collection's own asset
+contract.
+
 ## NaN, nodata, and the ocean convention
 
-The source nodata (water, voids, masked cells: see DESIGN.md) is NaN. NaN
-never reaches the terrarium formula: every pixel still NaN after every
-successfully-fetched contributing cell has been composited is set to
-elevation 0 before encoding -- the same convention AWS's terrain-tiles
-uses for ocean, since terrarium PNGs have no nodata channel of their own.
-Negative real elevations (e.g. the Dead Sea, about -430 m) are ordinary
-input to the same formula and round-trip correctly (``--verify`` checks
-this): the encoding has no sign bit, ones's complement, or other
+The source nodata (water, voids, masked cells: see DESIGN.md) is NaN. With
+void-filling on (the default), most of it is now a real elevation from
+GLO-30 by the time any zoom is encoded -- see above. What NaN reaches the
+terrarium formula is only: void-fill disabled (``--no-void-fill``), no
+GLO-30 tile existed for that cell (pure ocean, mostly), or the handful of
+pixels where even GLO-30 has nothing. Every pixel still NaN after every
+successfully-fetched contributing cell has been composited (and, when
+enabled, after void-filling) is set to elevation 0 before encoding -- the
+same convention AWS's terrain-tiles uses for ocean, since terrarium PNGs
+have no nodata channel of their own. Negative real elevations (e.g. the
+Dead Sea, about -430 m, or a GLO-30-filled void below mean sea level) are
+ordinary input to the same formula and round-trip correctly (``--verify``
+checks this): the encoding has no sign bit, ones's complement, or other
 representation that treats negative values specially, it is just
 ``elevation + 32768`` before splitting into bytes, and 32768 is
 comfortably larger than the deepest point on land.
+
+``void_masks`` (below) now means "neither GEM-15 nor, if void-filling ran,
+GLO-30 had data here" -- not "GEM-15 masked this." It no longer
+distinguishes *why* a pixel is void (ocean vs. GEM-15's inland mask vs. no
+cell at all): with filling on, inland voids mostly stop being void at all,
+so the remaining cases are dominated by ocean and genuine no-coverage, and
+splitting those further was not worth a second mask. ``--no-void-fill``
+restores the original, unfilled meaning exactly.
 
 ## Precision
 
@@ -184,6 +279,7 @@ from __future__ import annotations
 
 import argparse
 import io
+import math
 import os
 import sqlite3
 import subprocess
@@ -247,6 +343,17 @@ CELL_READ_BACKOFF_S = 2.0
 # quantize_elevation and the module docstring's step table.
 FULL_RESOLUTION_ZOOM = 19
 
+# Void-filling from Copernicus GLO-30 (see the module docstring's section
+# on this). Public, unauthenticated HTTPS mirror on AWS Open Data; the 1x1
+# degree tile naming is verified against the Sau reservoir cell (N41/E002)
+# with a real fetch, 2026-11-14.
+GLO30_BUCKET = "https://copernicus-dem-30m.s3.amazonaws.com"
+
+# How many pixels of blend toward GEM-15's own nearest valid value at a
+# void's boundary, before a filled pixel is pure GLO-30 (+ the geoid
+# offset). See fill_voids_from_glo30.
+VOID_FILL_FEATHER_PX = 3
+
 # --verify's tolerance floor, in units of this tile's own meters/pixel, for
 # a tile this script itself rewarped from source (true at every zoom in
 # --overview-mode rewarp, and at --maxzoom in every mode). 2% was picked
@@ -301,6 +408,138 @@ class CellReadError(Exception):
     it would reach the compositing step. See the module docstring, "Fetch
     failures never bake in ocean".
     """
+
+
+def glo30_url(west: float, south: float) -> str:
+    """The Copernicus GLO-30 tile URL for the 1x1-degree cell whose SW
+    corner is (west, south) -- the exact same corner GEM-15's own cell
+    naming uses, verified against the Sau reservoir cell (bbox west=2,
+    south=41 -> N41_00_E002_00, a real fetch confirmed 200 + matching
+    bounds)."""
+    w, s = int(round(west)), int(round(south))
+    ns = "S" if s < 0 else "N"
+    ew = "W" if w < 0 else "E"
+    name = f"Copernicus_DSM_COG_10_{ns}{abs(s):02d}_00_{ew}{abs(w):03d}_00_DEM"
+    return f"{GLO30_BUCKET}/{name}/{name}.tif"
+
+
+_egm_transformer = None
+
+
+def _get_egm_transformer():
+    global _egm_transformer
+    if _egm_transformer is None:
+        from pyproj import Transformer
+
+        _egm_transformer = Transformer.from_crs(
+            "EPSG:4326+3855", "EPSG:4326+5773", always_xy=True
+        )
+    return _egm_transformer
+
+
+def egm2008_to_egm96_offset(lon: float, lat: float) -> float:
+    """Meters to ADD to a GLO-30 (EGM2008, EPSG:3855) orthometric height to
+    get a GEM-15-comparable (EGM96, EPSG:5773) orthometric height, at
+    (lon, lat). Raises if the PROJ geoid grids this needs
+    (us_nga_egm2008_1, us_nga_egm96_15) cannot be loaded --
+    check_void_fill_prerequisites calls this once at startup specifically
+    so a missing grid fails loudly before any build work, never silently
+    per-cell deep inside render_cell_block."""
+    transformer = _get_egm_transformer()
+    _, _, offset = transformer.transform(lon, lat, 0.0)
+    if offset is None or not math.isfinite(offset):
+        raise RuntimeError(
+            f"EGM2008->EGM96 geoid conversion returned no usable result at "
+            f"({lon}, {lat}) -- PROJ grids us_nga_egm2008_1/us_nga_egm96_15 "
+            f"are unavailable (no PROJ_NETWORK and not cached locally?)"
+        )
+    return offset
+
+
+def check_void_fill_prerequisites() -> None:
+    """Fail loudly, once, before any build work, if the geoid conversion
+    void-filling depends on is not actually usable. Never fill a void with
+    an unconverted EGM2008 height -- see the module docstring."""
+    try:
+        offset = egm2008_to_egm96_offset(0.0, 0.0)
+    except Exception as exc:  # noqa: BLE001 - this is the one place that must not retry/continue
+        sys.exit(
+            "--void-fill (the default) needs a working EGM2008->EGM96 "
+            "geoid conversion (PROJ grids us_nga_egm2008_1 and "
+            f"us_nga_egm96_15), and it failed: {exc}\n"
+            "Fix PROJ_NETWORK/PROJ_DATA, pre-fetch the grids with "
+            "`projsync --file us_nga_egm2008_1.tif --file "
+            "us_nga_egm96_15.tif`, or pass --no-void-fill to keep the "
+            "original 0-fill-everything behavior this run."
+        )
+    log(f"void-fill: EGM2008->EGM96 geoid conversion OK "
+        f"(offset at 0N,0E = {offset:+.3f} m)")
+
+
+def fill_voids_from_glo30(
+    arr: np.ndarray,
+    cell,
+    left: float, bottom: float, right: float, top: float,
+    width: int, height: int,
+) -> np.ndarray:
+    """Fill NaN in `arr` (already warped to the EPSG:3857 grid defined by
+    left/bottom/right/top/width/height) from Copernicus GLO-30,
+    geoid-corrected to EGM96 and feathered toward GEM-15's own nearest
+    valid value near the void boundary. Returns `arr` unchanged if there
+    is nothing to fill (the cheap check), or if GLO-30 has no tile or the
+    fetch fails for this cell (logged, not an error -- see the module
+    docstring's void-fill section)."""
+    void = np.isnan(arr)
+    if not void.any():
+        return arr  # the cheap check: skip the GLO-30 fetch entirely
+
+    from osgeo import gdal
+
+    url = glo30_url(cell.bbox[0], cell.bbox[1])
+    try:
+        gdal.UseExceptions()
+        apply_vsicurl_env()
+        glo_ds = gdal.Open(f"/vsicurl/{url}")
+        if glo_ds is None:
+            raise RuntimeError("gdal.Open returned None")
+        glo_warped = gdal.Warp(
+            "", glo_ds, format="MEM", dstSRS="EPSG:3857",
+            outputBounds=(left, bottom, right, top),
+            width=width, height=height,
+            resampleAlg="bilinear", errorThreshold=0.0,
+            multithread=True,
+        )
+        if glo_warped is None:
+            raise RuntimeError("gdal.Warp returned None")
+        fill = glo_warped.GetRasterBand(1).ReadAsArray().astype(np.float32)
+    except Exception as exc:  # noqa: BLE001 - no fill source is not a cell failure
+        log(f"  WARNING: {cell.cell_id}: GLO-30 fill unavailable ({exc}); "
+            f"voids in this cell stay 0-filled as before")
+        return arr
+
+    fill_void = np.isnan(fill)
+    usable_fill = void & ~fill_void
+    if not usable_fill.any():
+        return arr  # GLO-30 warped to nothing usable here either
+
+    offset = egm2008_to_egm96_offset(*cell.centroid)
+    fill = fill + offset
+
+    from scipy import ndimage
+
+    if (~void).any():
+        dist, (iy, ix) = ndimage.distance_transform_edt(void, return_indices=True)
+        nearest_valid = arr[iy, ix]
+        feather_w = np.clip(dist / VOID_FILL_FEATHER_PX, 0.0, 1.0)
+        blended = feather_w * fill + (1.0 - feather_w) * nearest_valid
+    else:
+        blended = fill  # no real GEM-15 data anywhere in this block to feather toward
+
+    out = arr.copy()
+    out[usable_fill] = blended[usable_fill]
+    # Pixels where neither GEM-15 nor GLO-30 has data (fill_void & void)
+    # are left as NaN, same as before this feature existed.
+    return out
 
 
 def log(msg: str) -> None:
@@ -526,7 +765,9 @@ class CommitScheduler:
 # per-cell warp, with in-process retry
 # --------------------------------------------------------------------------
 
-def render_cell_block(cell, z: int, url: str) -> dict[tuple[int, int], np.ndarray]:
+def render_cell_block(
+    cell, z: int, url: str, fill_voids: bool = True
+) -> dict[tuple[int, int], np.ndarray]:
     """{(x,y): 256x256 float32 elevation array (may hold NaN)} for every
     tile the cell covers at zoom z.
 
@@ -535,6 +776,13 @@ def render_cell_block(cell, z: int, url: str) -> dict[tuple[int, int], np.ndarra
     be opened/warped/read; never returns {} for that case (see the module
     docstring, "Fetch failures never bake in ocean" -- the distinction is
     load-bearing for the caller).
+
+    `fill_voids`: fill NaN from Copernicus GLO-30 before slicing into
+    tiles (see the module docstring's void-fill section). On by default;
+    a GLO-30 fetch failure for one cell never raises CellReadError -- a
+    missing fill source leaves GEM-15's own data (or its absence)
+    untouched, which is not the same failure mode as GEM-15 itself being
+    unreachable.
     """
     from osgeo import gdal
 
@@ -569,6 +817,8 @@ def render_cell_block(cell, z: int, url: str) -> dict[tuple[int, int], np.ndarra
             if warped is None:
                 raise CellReadError(f"gdal.Warp returned None for {url}")
             arr = warped.GetRasterBand(1).ReadAsArray().astype(np.float32)
+            if fill_voids:
+                arr = fill_voids_from_glo30(arr, cell, left, bottom, right, top, width, height)
             out = {}
             for t in tiles:
                 col0 = (t.x - txmin) * TILE_SIZE
@@ -584,12 +834,12 @@ def render_cell_block(cell, z: int, url: str) -> dict[tuple[int, int], np.ndarra
     ) from last_exc
 
 
-def _fetch_cell_safe(cell, z: int, url: str):
+def _fetch_cell_safe(cell, z: int, url: str, fill_voids: bool = True):
     """Never raises. Returns (cell, blocks) on success, (cell, None) on
     failure -- the sentinel a caller must check for before touching
     `remaining` (see build_zoom_rewarp)."""
     try:
-        return cell, render_cell_block(cell, z, url)
+        return cell, render_cell_block(cell, z, url, fill_voids=fill_voids)
     except CellReadError as exc:
         log(f"  WARNING: {cell.cell_id} z{z} failed, leaving its tiles "
             f"unfinished this run: {exc}")
@@ -654,6 +904,7 @@ def build_zoom_rewarp(
     force: bool,
     quantize: bool,
     committer: CommitScheduler,
+    fill_voids: bool = True,
 ) -> tuple[int, int, int]:
     """Returns (written, already_done, failed_cell_count)."""
     done = set() if force else existing_tiles_for_zoom(conn, z)
@@ -716,7 +967,7 @@ def build_zoom_rewarp(
 
         def submit_fetch(cell):
             url = cell.dsm_url if band == "dsm" else cell.dtm_url
-            return _fetch_cell_safe(cell, z, url)
+            return _fetch_cell_safe(cell, z, url, fill_voids=fill_voids)
 
         def on_result(cell, fut) -> None:
             nonlocal done_n, failed_cells
@@ -887,6 +1138,7 @@ def verify_mbtiles_tile(
     url: str,
     tolerance_m: float,
     is_rewarped: bool,
+    fill_voids: bool = False,
 ) -> bool:
     """Decode (z,x,y) from the MBTiles and compare a few pixels against a
     fresh, independent GDAL read+warp of the source COG at the same grid.
@@ -904,6 +1156,22 @@ def verify_mbtiles_tile(
     vs. direct bilinear at this zoom), which can disagree by more even with
     no bug anywhere (RELATIVE_TOLERANCE_AVERAGED, wider, and measured, not
     just reasoned -- see that constant for the numbers).
+
+    `fill_voids`: whether the archive was built with void-filling on. A
+    pixel GEM-15 (hence this function's own `ref`, which is always a pure
+    GEM-15 rewarp) has no data for can legitimately be non-zero in
+    `decoded` when filling is on -- it is GLO-30, not GEM-15. This
+    function cannot cross-check those values against GEM-15 (there is
+    nothing there to check against) or against an independent GLO-30 fill
+    (not implemented -- see the module docstring; this was a deliberate
+    scope cut, not an oversight). Policy, instead: such pixels are
+    excluded from the normal decoded-vs-ref comparison (they already were,
+    incidentally, since the candidate selection below is driven by where
+    `ref` has data), and a separate, looser sanity check runs over a
+    sample of them -- finite, and within [-500, 9000] m (comfortably
+    wider than any real elevation on Earth) -- to still catch a gross
+    encoding bug (NaN leaking through, a sign error, a missing +32768)
+    without needing to re-derive the whole fill pipeline a second time.
     """
     from osgeo import gdal
 
@@ -961,10 +1229,37 @@ def verify_mbtiles_tile(
         for yy, xx in candidates[pick]:
             diffs.append(abs(float(decoded[yy, xx]) - float(ref[yy, xx])))
 
-    if not diffs and is_rewarped:
+    # Void-fill sanity check: a sample of pixels ref (pure GEM-15) has no
+    # data for, which can legitimately be non-zero in decoded when
+    # fill_voids is on. Not cross-checked against any ground truth (see
+    # the docstring) -- just finite and plausible, to still catch a gross
+    # encoding bug.
+    fill_sanity_ok = True
+    fill_note = ""
+    if fill_voids:
+        fill_candidates = np.argwhere(nan_mask)
+        if len(fill_candidates):
+            n_fill = min(64, len(fill_candidates))
+            fpick = np.linspace(0, len(fill_candidates) - 1, n_fill).astype(int)
+            fill_vals = [float(decoded[yy, xx]) for yy, xx in fill_candidates[fpick]]
+            bad = [v for v in fill_vals if not math.isfinite(v) or v < -500 or v > 9000]
+            if bad:
+                fill_sanity_ok = False
+                fill_note = (f" | void-fill sanity FAIL: {len(bad)}/{len(fill_vals)} "
+                             f"filled sample(s) implausible, e.g. {bad[0]:.1f} m")
+            else:
+                fill_note = (f" | void-fill sanity OK ({len(fill_vals)} filled "
+                             f"sample(s), range [{min(fill_vals):.1f}, "
+                             f"{max(fill_vals):.1f}] m, not cross-checked "
+                             f"against ground truth -- see docstring)")
+
+    if not diffs and is_rewarped and not fill_voids:
         # This tile was built the exact same way this reference is
         # computed (one bilinear point-sample from source), so if that
         # reference found nothing, the archive should show nothing either.
+        # (Only valid with fill_voids off: with it on, a wholly-void-per-
+        # -GEM-15 tile is expected to be GLO-30-filled, not 0, and that
+        # case is handled below instead.)
         max_diff = float(np.abs(decoded).max())
         note = " (this cell has no source data anywhere in this tile; checked 0-fill instead)"
         effective_tolerance = tolerance_m
@@ -981,14 +1276,19 @@ def verify_mbtiles_tile(
         # a small island) as a diluted-but-nonzero contribution, which is
         # exactly the representation advantage box-mean has over bilinear
         # point-sampling at extreme decimation -- the whole reason average
-        # mode exists. This check's only "ground truth" (a direct rewarp)
-        # cannot resolve that case, so it is inconclusive, not a failure.
-        log(f"verify: z{z}/{x}/{y} (derived): inconclusive -- a direct "
-            f"single-cell point-sample found no source data at this zoom, "
-            f"but the archive may still correctly carry a diluted "
-            f"contribution from deeper zooms through box-averaging; not "
-            f"treated as a failure")
-        return True
+        # mode exists. A fill_voids-on rewarped tile with no ref data
+        # anywhere is the analogous case for void-filling: GLO-30 may
+        # have real data this check's pure-GEM-15 reference can't see.
+        # Either way, this check's only "ground truth" (a direct GEM-15
+        # rewarp) cannot resolve it, so it is inconclusive, not a failure
+        # -- except for the void-fill sanity check, which still applies.
+        log(f"verify: z{z}/{x}/{y} ({'rewarped' if is_rewarped else 'derived'}): "
+            f"inconclusive -- a direct single-cell point-sample found no "
+            f"source data at this zoom, but the archive may still "
+            f"correctly carry data from "
+            f"{'GLO-30 void-filling' if is_rewarped else 'box-averaging deeper zooms'}"
+            f"; not treated as a failure{fill_note}")
+        return fill_sanity_ok
     else:
         max_diff = max(diffs)
         kind = "interior" if len(interior_valid) else "boundary-adjacent"
@@ -997,11 +1297,11 @@ def verify_mbtiles_tile(
         relative = RELATIVE_TOLERANCE if is_rewarped else RELATIVE_TOLERANCE_AVERAGED
         effective_tolerance = max(tolerance_m, tile_resolution_m * relative)
 
-    ok = max_diff <= effective_tolerance
+    ok = (max_diff <= effective_tolerance) and fill_sanity_ok
     log(f"verify: z{z}/{x}/{y} ({'rewarped' if is_rewarped else 'derived'}): "
         f"max sampled |decoded - direct-read| = {max_diff:.4f} m "
         f"(tolerance {effective_tolerance:.4f} m) -> "
-        f"{'OK' if ok else 'FAIL'}{note}")
+        f"{'OK' if ok else 'FAIL'}{note}{fill_note}")
     return ok
 
 
@@ -1046,6 +1346,10 @@ def main() -> int:
     p.add_argument("--commit-every-seconds", type=float, default=60.0)
     p.add_argument("--no-quantize", action="store_true",
                    help="disable per-zoom vertical quantization (for A/B comparison)")
+    p.add_argument("--no-void-fill", action="store_true",
+                   help="disable filling GEM-15 voids from Copernicus "
+                        "GLO-30 (the default); voids stay a flat 0 m, as "
+                        "before this feature existed")
     p.add_argument("--force", action="store_true",
                    help="rebuild tiles already present in the MBTiles")
     p.add_argument("--skip-convert", action="store_true",
@@ -1058,6 +1362,10 @@ def main() -> int:
 
     encode_workers = args.encode_workers or args.workers
     quantize = not args.no_quantize
+    fill_voids = not args.no_void_fill
+
+    if fill_voids:
+        check_void_fill_prerequisites()
 
     if args.bbox or args.cells:
         log("WARNING: --bbox/--cells produces a standalone archive only. "
@@ -1077,7 +1385,7 @@ def main() -> int:
         sys.exit("no cells matched --cells/--bbox")
     log(f"{len(cells)} cell(s) selected, band={args.band}, "
         f"overview-mode={args.overview_mode}, quantize={quantize}, "
-        f"z{args.minzoom}-z{args.maxzoom}")
+        f"fill_voids={fill_voids}, z{args.minzoom}-z{args.maxzoom}")
 
     if args.mbtiles:
         mbtiles_path = args.mbtiles
@@ -1092,19 +1400,35 @@ def main() -> int:
     south = min(c.bbox[1] for c in cells)
     east = max(c.bbox[2] for c in cells)
     north = max(c.bbox[3] for c in cells)
+    description = f"GEM-15 {args.band.upper()} elevation, terrarium-encoded"
+    attribution = "This dataset is produced by Google"
+    if fill_voids:
+        description += "; voids filled from Copernicus GLO-30"
+        # Exact wording required by the Copernicus WorldDEM-30 licence,
+        # Article 6(b) (the notice for *modified* data -- this is resampled,
+        # geoid-shifted, and feather-blended, not redistributed as-is).
+        # Verified by reading the licence PDF directly, 2026-11-14. See the
+        # module docstring's void-fill section and DESIGN.md.
+        attribution += (
+            "; produced using Copernicus WorldDEM-30 (c) DLR e.V. "
+            "2010-2014 and (c) Airbus Defence and Space GmbH 2014-2018 "
+            "provided under COPERNICUS by the European Union and ESA; "
+            "all rights reserved"
+        )
     set_mbtiles_metadata(
         conn,
         name=f"gem-15-{args.band}-terrarium",
         format="png",
         type="baselayer",
         version="1.0.0",
-        description=f"GEM-15 {args.band.upper()} elevation, terrarium-encoded",
-        attribution="This dataset is produced by Google",
+        description=description,
+        attribution=attribution,
         bounds=f"{west},{south},{east},{north}",
         minzoom=args.minzoom,
         maxzoom=args.maxzoom,
         encoding="terrarium",
         overview_mode=args.overview_mode,
+        void_fill="glo30" if fill_voids else "none",
     )
 
     # verify_tiles: (z, x, y, url, is_rewarped)
@@ -1128,6 +1452,7 @@ def main() -> int:
             written, already, failed = build_zoom_rewarp(
                 z, cells, args.band, conn, args.workers, encode_workers,
                 args.window_multiplier, args.force, quantize, committer,
+                fill_voids=fill_voids,
             )
             total_written += written
             total_failed_cells += failed
@@ -1136,6 +1461,7 @@ def main() -> int:
         written, already, failed = build_zoom_rewarp(
             args.maxzoom, cells, args.band, conn, args.workers, encode_workers,
             args.window_multiplier, args.force, quantize, committer,
+            fill_voids=fill_voids,
         )
         total_written += written
         total_failed_cells += failed
@@ -1153,7 +1479,9 @@ def main() -> int:
 
     all_ok = True
     for z, x, y, url, is_rewarped in verify_tiles:
-        ok = verify_mbtiles_tile(conn, z, x, y, url, args.verify_tolerance_m, is_rewarped)
+        ok = verify_mbtiles_tile(
+            conn, z, x, y, url, args.verify_tolerance_m, is_rewarped, fill_voids=fill_voids
+        )
         all_ok = all_ok and ok
 
     conn.close()

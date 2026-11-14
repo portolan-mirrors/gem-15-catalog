@@ -302,21 +302,21 @@
       "href": "./terrain/gem-15-dsm-terrarium.pmtiles",
       "type": "application/vnd.pmtiles",
       "title": "DSM as terrarium-encoded terrain tiles (global)",
-      "description": "The DSM as Mapzen terrarium-encoded raster tiles, z0\u2013z13, in one PMTiles archive. MapLibre reads this as a `raster-dem` source with `\"encoding\": \"terrarium\"`, which no Float32 COG can serve. Decode with elevation = (R * 256 + G + B / 256) \u2212 32768. Terrarium has no nodata, so masked cells and ocean encode as 0 m.",
+      "description": "The DSM as Mapzen terrarium-encoded raster tiles, z0\u2013z14, in one PMTiles archive. MapLibre reads this as a `raster-dem` source with `\"encoding\": \"terrarium\"`, which no Float32 COG can serve. Decode with elevation = (R * 256 + G + B / 256) \u2212 32768. Terrarium has no nodata value, so ocean encodes as 0 m. GEM-15's own inland voids, about 2.5 % of cells (water plus a 9 m buffer, snow and ice, salt pans, low-texture surfaces, and cells differing by more than 50 m from GLO-30), are filled from Copernicus GLO-30 before encoding, converted EGM2008 to EGM96 and feathered toward GEM-15's own nearest value over 3 px at the boundary, so an inland void carries a real elevation rather than a 0 m pit. A filled pixel is GLO-30 at 30 m, not GEM-15 at 15 m, and nothing in the tiles marks which pixels were filled: draw with these, measure with the item COGs. Void-filling carries a required notice: \"produced using Copernicus WorldDEM-30 © DLR e.V. 2010-2014 and © Airbus Defence and Space GmbH 2014-2018 provided under COPERNICUS by the European Union and ESA; all rights reserved\".",
       "roles": [
         "visual"
       ],
-      "processing:lineage": "Resampled from the DSM band's internal overviews at the resolution matching each zoom, encoded to terrarium PNG tiles and packed into PMTiles."
+      "processing:lineage": "Resampled from the DSM band's internal overviews at the resolution matching each zoom, void-filled from Copernicus GLO-30 at the maximum zoom, vertically quantized per zoom, encoded to terrarium PNG tiles and packed into PMTiles."
     },
     "terrain-dsm-demo": {
       "href": "./terrain/gem-15-dsm-terrarium-demo-barcelona.pmtiles",
       "type": "application/vnd.pmtiles",
-      "title": "DSM terrain tiles, Barcelona demo (z0\u2013z14)",
-      "description": "A small single-area archive over Barcelona, built the same way as the global file but one zoom deeper, for examples and for testing a terrain client without pulling the global archive.",
+      "title": "DSM terrain tiles, Barcelona demo",
+      "description": "A small single-area archive over Barcelona, built by the same pipeline as the global file and to the same maximum zoom, for examples and for testing a terrain client without pulling the global archive. Terrarium has no nodata value, so ocean encodes as 0 m. GEM-15's own inland voids, about 2.5 % of cells (water plus a 9 m buffer, snow and ice, salt pans, low-texture surfaces, and cells differing by more than 50 m from GLO-30), are filled from Copernicus GLO-30 before encoding, converted EGM2008 to EGM96 and feathered toward GEM-15's own nearest value over 3 px at the boundary, so an inland void carries a real elevation rather than a 0 m pit. A filled pixel is GLO-30 at 30 m, not GEM-15 at 15 m, and nothing in the tiles marks which pixels were filled: draw with these, measure with the item COGs. Void-filling carries a required notice: \"produced using Copernicus WorldDEM-30 © DLR e.V. 2010-2014 and © Airbus Defence and Space GmbH 2014-2018 provided under COPERNICUS by the European Union and ESA; all rights reserved\".",
       "roles": [
         "visual"
       ],
-      "processing:lineage": "Same pipeline as the global terrain archive, restricted to the Barcelona area and extended to z14."
+      "processing:lineage": "Same pipeline and same maximum zoom as the global terrain archive, restricted to the Barcelona area."
     },
     "style-hypsometric": {
       "href": "./styles/hypsometric.json",

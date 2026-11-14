@@ -191,7 +191,7 @@ Sect. 4 and Tables E1–E3 of the preprint.
 Google's bucket sends no CORS headers, so a browser cannot read the GEM-15 COGs
 at all, and MapLibre's `raster-dem` source reads only terrarium or
 Terrain-RGB encoded tiles, never Float32 GeoTIFF. This catalog therefore
-publishes the DSM as a terrarium-encoded PMTiles archive, z0 to z13, which
+publishes the DSM as a terrarium-encoded PMTiles archive, z0 to z14, which
 MapLibre reads directly:
 
 ```js
@@ -222,11 +222,22 @@ const map = new maplibregl.Map({
 ```
 
 Decode a pixel yourself with `elevation = (R * 256 + G + B / 256) − 32768`.
-Terrarium has no nodata value, so masked cells and ocean both encode as 0 m.
+Terrarium has no nodata value, so ocean encodes as 0 m. GEM-15's own inland
+voids, about 2.5 % of cells (water plus a 9 m buffer, snow and ice, salt pans,
+low-texture surfaces, and cells differing by more than 50 m from GLO-30), are
+filled from Copernicus GLO-30 before encoding, converted EGM2008 to EGM96 and
+feathered over 3 px at the boundary. A reservoir or an icefield therefore
+stands at its real height instead of dropping into a 0 m pit. For analysis,
+note that a filled pixel is GLO-30 at 30 m rather than GEM-15 at 15 m, and that
+nothing in the tiles marks which pixels were filled. Void-filling carries a
+required notice: "produced using Copernicus WorldDEM-30 © DLR e.V. 2010-2014
+and © Airbus Defence and Space GmbH 2014-2018 provided under COPERNICUS by the
+European Union and ESA; all rights reserved".
+
 Three ready-made styles sit in `styles/`: `hypsometric.json` (the default, an
 absolute elevation tint under a hillshade), `hillshade.json` (relief only) and
 `terrain-3d.json` (tint, hillshade and 3D terrain). A smaller demo archive over
-Barcelona, one zoom deeper, is at `terrain/gem-15-dsm-terrarium-demo-barcelona.pmtiles`.
+Barcelona alone is at `terrain/gem-15-dsm-terrarium-demo-barcelona.pmtiles`.
 
 A worked example draws all three styles in the browser, with a 3D terrain toggle
 and an exaggeration slider, at
@@ -242,8 +253,8 @@ in the catalog repository, outside the published catalog.
 | `collection.json` | This collection, with 297 `child` links into Google's STAC tree |
 | `items.parquet` | All 13,485 items as STAC-GeoParquet, for one-request queries |
 | `gem-15_overview.tif` | Global DSM overview, 8-bit RGB with alpha, Web Mercator, about 960 m |
-| `terrain/gem-15-dsm-terrarium.pmtiles` | DSM as terrarium raster tiles, z0–z13, global |
-| `terrain/gem-15-dsm-terrarium-demo-barcelona.pmtiles` | Same, Barcelona only, z0–z14 |
+| `terrain/gem-15-dsm-terrarium.pmtiles` | DSM as terrarium raster tiles, z0–z14, global, GEM-15 voids filled from Copernicus GLO-30 |
+| `terrain/gem-15-dsm-terrarium-demo-barcelona.pmtiles` | Same, Barcelona only |
 | `styles/*.json` | Three MapLibre GL styles over the terrain tiles |
 | `AGENTS.md`, `llms.txt` | Guidance for agents and language models |
 

@@ -221,12 +221,25 @@ with the published schema.
 ## Related data and layers
 
 - **Terrain tiles.** `terrain/gem-15-dsm-terrarium.pmtiles` holds the DSM as
-  Mapzen terrarium-encoded raster tiles, z0 to z13, for MapLibre's `raster-dem`
+  Mapzen terrarium-encoded raster tiles, z0 to z14, for MapLibre's `raster-dem`
   source. Decode with `elevation = (R * 256 + G + B / 256) − 32768`. Terrarium
-  has no nodata, so masked cells and ocean encode as 0 m, which makes the tiles
-  unsuitable for analysis. Use them to draw, not to measure.
+  has no nodata value, so **ocean encodes as 0 m**. GEM-15's own inland voids
+  (water plus a 9 m buffer, snow and ice, salt pans, low-texture surfaces, and
+  cells differing by more than 50 m from GLO-30: about 2.5 % of cells) are
+  **filled from Copernicus GLO-30** before encoding, converted EGM2008 to EGM96
+  and feathered toward GEM-15's own nearest value over 3 px at the boundary, so
+  an inland void carries a real elevation rather than a 0 m pit. What stays
+  unfilled is open ocean, where GLO-30 has no tiles either, and that still
+  encodes as 0 m.
+  **For analysis this matters: a filled pixel is GLO-30 at 30 m, not GEM-15 at
+  15 m**, and nothing in the tiles marks which pixels were filled. The tiles are
+  also vertically quantized per zoom. Use them to draw, not to measure, and read
+  the item COGs for heights.
+  Void-filling carries a required notice: "produced using Copernicus WorldDEM-30
+  © DLR e.V. 2010-2014 and © Airbus Defence and Space GmbH 2014-2018 provided
+  under COPERNICUS by the European Union and ESA; all rights reserved".
   `terrain/gem-15-dsm-terrarium-demo-barcelona.pmtiles` is the same encoding over
-  one area, one zoom deeper, for tests.
+  one area, for tests.
 - **Styles.** `styles/hypsometric.json` (default), `styles/hillshade.json` and
   `styles/terrain-3d.json` are self-contained MapLibre GL styles over those
   tiles.

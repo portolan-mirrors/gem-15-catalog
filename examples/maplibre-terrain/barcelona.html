@@ -204,7 +204,9 @@
 
   <p class="note">
     GEM-15 is a 15 m surface model, so Barcelona's city blocks rise from the
-    terrain. Elevations are meters above the EGM96 geoid.
+    terrain. Elevations are meters above the EGM96 geoid. GEM-15 masks water
+    and other low-texture surfaces, and the terrain tiles fill those voids
+    from Copernicus GLO-30 so they are not 0 m pits.
   </p>
   <p class="note">
     This dataset is produced by Google, licensed
@@ -230,9 +232,14 @@ import * as maplibregl from 'https://unpkg.com/maplibre-gl@6.18.0/dist/maplibre-
 const TERRAIN_PMTILES =
   'https://data.source.coop/portolan-mirrors/gem-15-catalog/gem-15/terrain/gem-15-dsm-terrarium-demo-barcelona.pmtiles';
 
+// Void-filling from Copernicus GLO-30 adds a notice that the WorldDEM-30
+// licence requires wherever the modified data is shown.
 const ATTRIBUTION =
   'This dataset is produced by Google | CC-BY-4.0 | ' +
-  '<a href="https://source.coop/portolan-mirrors/gem-15-catalog" target="_blank" rel="noopener">gem-15-catalog</a>';
+  '<a href="https://source.coop/portolan-mirrors/gem-15-catalog" target="_blank" rel="noopener">gem-15-catalog</a>' +
+  ' | produced using Copernicus WorldDEM-30 \u00a9 DLR e.V. 2010-2014 and ' +
+  '\u00a9 Airbus Defence and Space GmbH 2014-2018 provided under COPERNICUS ' +
+  'by the European Union and ESA; all rights reserved';
 
 const S2_ATTRIBUTION =
   'Contains modified Copernicus Sentinel data 2025 | Sentinel-2 quarterly ' +
@@ -245,8 +252,12 @@ const S2_LAYER_ID = 's2-imagery';
 
 // ---------------------------------------------------------------------------
 // The hypsometric ramp. Matches the catalog's hypsometric.json. Each stop is
-// meters above the EGM96 geoid. GEM-15 writes NaN and ocean alike as 0 m, so
-// the 0 m stop doubles as the water tone and the no-data tone.
+// meters above the EGM96 geoid. Terrarium has no nodata value, so ocean
+// encodes as 0 m and the 0 m stop is the water tone. GEM-15's own inland
+// voids are filled from Copernicus GLO-30 before encoding, so a reservoir
+// holds its real surface height instead of dropping into a 0 m pit.
+// The live demo archive still carries the older 0 m pits. It picks the fill
+// up on its next rebuild, and this page needs no change when it does.
 // ---------------------------------------------------------------------------
 
 const ELEVATION_RAMP = [
@@ -437,11 +448,31 @@ function tileLat(y, z) {
 // source, so later tiles reuse both.
 const cogCache = new Map();
 
+// geotiff.js fetches in fixed blocks and caches them per file. The block size
+// trades round trips against bytes, and both matter here.
+//
+// Measured against these files on 2026-11-14, on a link with a 700 ms round
+// trip: reading the six overview headers took 2590 ms with the default block,
+// 1771 ms with a 1 MB block, and 1149 ms with a 128 KB block. A 128 KB block
+// then made a single 400 by 400 window read take over 8 s, because it split
+// into many requests. A 1 MB block pulls at least 1 MB per band per tile,
+// which is wasteful on a phone.
+//
+// 256 KB sits between the two. It also bounds memory: the cache holds 24
+// blocks per file, so about 6 MB each, and a view typically has three to six
+// files open. A larger cache with 1 MB blocks could hold hundreds of
+// megabytes, which is the wrong trade for a page meant to run on a phone.
+const COG_BLOCK_SIZE = 256 * 1024;
+const COG_CACHE_BLOCKS = 24;
+
 function openCog(url) {
   let entry = cogCache.get(url);
   if (!entry) {
     entry = (async () => {
-      const tiff = await GeoTIFF.fromUrl(url, { cacheSize: 256 });
+      const tiff = await GeoTIFF.fromUrl(url, {
+        blockSize: COG_BLOCK_SIZE,
+        cacheSize: COG_CACHE_BLOCKS,
+      });
       const count = await tiff.getImageCount();
       const levels = [];
       for (let i = 0; i < count; i++) {
@@ -530,9 +561,10 @@ async function buildS2Tile(z, x, y, signal) {
   );
   if (hits.length === 0) return transparentTile();
 
-  // 3. Read one window per band per touched tile.
-  const sources = [];
-  for (const [mgrs, tMinE, tMinN, tMaxE, tMaxN] of hits) {
+  // 3. Read one window per band per touched tile. Every read starts at once,
+  //    across both the tiles and the bands, because the round trip dominates.
+  //    The results keep the manifest order, which the overlap policy needs.
+  const perTile = await Promise.all(hits.map(async ([mgrs, tMinE, tMinN, tMaxE, tMaxN]) => {
     const bands = await Promise.all(S2_BANDS.map(async (band) => {
       const { levels } = await openCog(`${S2_BASE}/${mgrs}_0_0/${band}.tif`);
       const level = pickLevel(levels, tMaxE - tMinE, wantRes);
@@ -558,8 +590,9 @@ async function buildS2Tile(z, x, y, signal) {
         c0, r0, res, originE: tMinE, originN: tMaxN,
       };
     }));
-    if (bands.every((b) => b !== null)) sources.push(bands);
-  }
+    return bands.every((b) => b !== null) ? bands : null;
+  }));
+  const sources = perTile.filter((b) => b !== null);
   if (sources.length === 0) return transparentTile();
 
   // 4. Inverse-warp, composite, stretch.
@@ -720,7 +753,18 @@ terrainToggle.addEventListener('change', () => {
 
 exaggeration.addEventListener('input', applyTerrain);
 
-map.on('load', applyTerrain);
+// The style is inline, so it loads fast. It is still not instant, and every
+// addSource or setLayoutProperty call below throws while it is in flight.
+let styleReady = false;
+map.on('load', () => {
+  styleReady = true;
+  applyTerrain();
+});
+
+function whenStyleReady() {
+  if (styleReady || map.isStyleLoaded()) return Promise.resolve();
+  return new Promise((resolve) => map.once('load', () => resolve()));
+}
 
 // ---------------------------------------------------------------------------
 // The surface chooser
@@ -768,10 +812,19 @@ async function initImagery() {
     await loadGeotiff();
     maplibregl.addProtocol('s2', s2Protocol);
 
-    // Read the header of one file now, so the first tiles do not also pay
-    // for a cold start, and so a dead endpoint surfaces here rather than as
-    // a silent run of blank tiles.
-    await openCog(`${S2_BASE}/31TDF_0_0/B04.tif`);
+    // Check that the mosaic answers before the source goes in. One short
+    // range request costs a single round trip, and it turns a dead endpoint
+    // into one visible failure rather than a silent run of blank tiles. It
+    // also opens the connection that the tile reads then reuse.
+    //
+    // Parsing the COG headers here instead would cost several seconds and
+    // hold the map behind a spinner. MapLibre asks for the visible tiles in
+    // parallel, and each one warms its own headers, so the imagery fills in
+    // progressively instead.
+    const probe = await fetch(`${S2_BASE}/31TDF_0_0/B04.tif`, {
+      headers: { Range: 'bytes=0-255' },
+    });
+    if (!probe.ok) throw new Error(`Sentinel-2 mosaic answered ${probe.status}`);
 
     map.addSource(S2_SOURCE_ID, {
       type: 'raster',
@@ -807,37 +860,58 @@ function setPaint(props) {
   }
 }
 
+function currentMode() {
+  return surfaceRadios.find((r) => r.checked).value;
+}
+
+function showTint() {
+  if (map.getLayer(S2_LAYER_ID)) {
+    map.setLayoutProperty(S2_LAYER_ID, 'visibility', 'none');
+  }
+  map.setLayoutProperty('elevation-tint', 'visibility', 'visible');
+  setPaint(HILLSHADE_OVER_TINT);
+}
+
+function showImagery() {
+  map.setLayoutProperty(S2_LAYER_ID, 'visibility', 'visible');
+  map.setLayoutProperty('elevation-tint', 'visibility', 'none');
+  setPaint(HILLSHADE_OVER_IMAGERY);
+}
+
 async function applySurface() {
-  const mode = surfaceRadios.find((r) => r.checked).value;
+  // A tap in the first second of the page lands before the style is up, and
+  // every call below would throw "Style is not done loading".
+  await whenStyleReady();
+
+  const mode = currentMode();
   imageryCredit.hidden = mode !== 'imagery';
 
-  if (mode === 'imagery') {
-    if (!imageryReady) {
-      // One init at a time. A reader who taps back and forth gets the same
-      // promise rather than a second script load.
-      imageryInit = imageryInit || initImagery();
-      try {
-        await imageryInit;
-      } catch (err) {
-        console.warn('Imagery unavailable:', err);
-        imageryInit = null;
-        // Fall back to the tint rather than leaving a blank map.
-        surfaceRadios.find((r) => r.value === 'tint').checked = true;
-        imageryCredit.hidden = true;
-        applySurface();
-        return;
-      }
-      // The reader may have switched back while the init was in flight.
-      if (surfaceRadios.find((r) => r.checked).value !== 'imagery') return;
-    }
-    map.setLayoutProperty(S2_LAYER_ID, 'visibility', 'visible');
-    map.setLayoutProperty('elevation-tint', 'visibility', 'none');
-    setPaint(HILLSHADE_OVER_IMAGERY);
-  } else {
-    if (imageryReady) map.setLayoutProperty(S2_LAYER_ID, 'visibility', 'none');
-    map.setLayoutProperty('elevation-tint', 'visibility', 'visible');
-    setPaint(HILLSHADE_OVER_TINT);
+  if (mode !== 'imagery') {
+    showTint();
+    return;
   }
+
+  if (!imageryReady) {
+    // One init at a time. A reader who taps back and forth gets the same
+    // promise rather than a second script load.
+    imageryInit = imageryInit || initImagery();
+    try {
+      await imageryInit;
+    } catch (err) {
+      console.warn('Imagery unavailable:', err);
+      imageryInit = null;
+      // Fall back to the tint rather than leaving a blank map. This sets the
+      // tint directly instead of calling back into this function, so a
+      // failure can never start a loop.
+      surfaceRadios.find((r) => r.value === 'tint').checked = true;
+      imageryCredit.hidden = true;
+      showTint();
+      return;
+    }
+    // The reader may have switched back while the init was in flight.
+    if (currentMode() !== 'imagery') return;
+  }
+  showImagery();
 }
 
 for (const radio of surfaceRadios) {

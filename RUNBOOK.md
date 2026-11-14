@@ -21,9 +21,13 @@ bindings rather than rasterio for that reason).
 ```bash
 conda create -n gem15 -c conda-forge python=3.11 \
   gdal=3.10 rasterio pyarrow duckdb mercantile pillow requests \
-  stac-geoparquet boto3 -y
+  stac-geoparquet boto3 pyproj scipy -y
 conda activate gem15
 ```
+
+(`pyproj` and `scipy` added for `build_terrain.py`'s void-filling: the
+EGM2008->EGM96 geoid conversion and the void-boundary feather,
+respectively -- see step 3.)
 
 Verify:
 
@@ -54,6 +58,38 @@ points at the wrong (or a stale) `proj.db` entirely. Confirm the fix with:
 
 ```bash
 python3 -c "from osgeo import gdal, osr; print(osr.SpatialReference().ImportFromEPSG(3857))"  # 0 = success
+```
+
+**Void-filling (step 3, on by default) needs two PROJ geoid grids**
+(`us_nga_egm2008_1`, `us_nga_egm96_15`) that conda-forge's `proj` package
+does not bundle. `build_terrain.py` fetches them over the network the
+first time it runs, which needs `PROJ_NETWORK=ON`:
+
+```bash
+export PROJ_NETWORK=ON
+```
+
+or, if the compute nodes have no outbound internet access (common on an
+HPC cluster -- check before assuming either way), pre-fetch them once
+while network access is available and point `PROJ_DATA` at a directory
+that has them:
+
+```bash
+projsync --file us_nga_egm2008_1.tif --file us_nga_egm96_15.tif --target-dir "$CONDA_PREFIX/share/proj"
+```
+
+`build_terrain.py` checks this itself, once, before any build work
+(`check_void_fill_prerequisites`), and exits with a clear message instead
+of ever filling a void with an unconverted height if the grids are not
+reachable either way. `--no-void-fill` skips the check and the whole
+feature, if that is ever the intent.
+
+```bash
+python3 -c "
+from pyproj import Transformer
+t = Transformer.from_crs('EPSG:4326+3855', 'EPSG:4326+5773', always_xy=True)
+print(t.transform(2.40, 41.97, 0.0))  # should print a small offset, not an error
+"
 ```
 
 `pmtiles` (the go-pmtiles CLI, used by `build_terrain.py` and for the
@@ -126,7 +162,7 @@ SCRATCH="/tmp/gem15-build-${SLURM_JOB_ID}"
 trap 'rm -rf "$SCRATCH"' EXIT
 mkdir -p "$SCRATCH"
 
-python3 tools/build_terrain.py --band dsm --minzoom 0 --maxzoom 13 \
+python3 tools/build_terrain.py --band dsm --minzoom 0 --maxzoom 14 \
   --workers 64 --db-path "$SCRATCH" \
   --output staging/publish/gem-15/terrain/gem-15-dsm-terrarium.pmtiles
 
@@ -145,8 +181,10 @@ EOF
 64 cores comfortably covers `--workers 64` for the fetch stage plus
 `--encode-workers 64` (the default, same as `--workers`) for the separate
 encode pool running concurrently; 128 GB covers the bounded in-flight
-window (`--window-multiplier`, default 2x workers -- see step 3) at z13's
-measured 139-199 MB per in-flight cell. Measured GCS throughput from a
+window (`--window-multiplier`, default 2x workers -- see step 3) at the
+139-199 MB per in-flight cell measured at z13. A cell's in-flight warp is
+sized by the source window it reads, which is the same native level at z14,
+so that figure still applies. Measured GCS throughput from a
 compute node: **~325 MB/s over 4 concurrent streams** -- scale
 `--workers` down from 64 if this saturates before the CPU does; the fetch
 stage is network-bound, not CPU-bound, so more workers past that point
@@ -227,10 +265,10 @@ cell.
   larger, consider a coarser `--resolution-m` for the collection asset
   (the brief's own target was ~960 m; this is not a hard requirement).
 
-## 3. Global terrain PMTiles (DSM, z0-z13)
+## 3. Global terrain PMTiles (DSM, z0-z14)
 
 ```bash
-python3 tools/build_terrain.py --band dsm --minzoom 0 --maxzoom 13 \
+python3 tools/build_terrain.py --band dsm --minzoom 0 --maxzoom 14 \
   --workers 64 --db-path "$SCRATCH" \
   --output staging/publish/gem-15/terrain/gem-15-dsm-terrarium.pmtiles
 ```
@@ -293,10 +331,10 @@ estimate.
 ### `--overview-mode`: average (new default) vs. rewarp (the original design)
 
 The original design re-warped every zoom independently from source --
-correct, but it is why the egress estimate below is so large: z13's
-~19.1 m/px falls between the 15 m native level and the 30 m overview, so
-*every* zoom down to z9 still reads a large fraction of full-resolution
-data per cell (see the table). `--overview-mode average` (the default now)
+correct, but it is why the egress estimate below is so large: the deepest
+zooms sit at or below the 15 m native level (z13 is ~19.1 m/px at the
+equator, z14 ~9.55 m/px), so *every* zoom down to z9 still reads a large
+fraction of full-resolution data per cell (see the table). `--overview-mode average` (the default now)
 warps only `--maxzoom` from source, then derives every shallower zoom by
 NaN-aware 2x2 box-averaging the zoom one level deeper, already sitting in
 the working MBTiles -- no further source reads. `--overview-mode rewarp`
@@ -309,10 +347,13 @@ toward 0; this is stored per-tile as a packed-bit mask in a new
 `void_masks` table (8192 bytes/tile), written for *every* tile regardless
 of mode.
 
-**Per-zoom vertical quantization** (Mapterhorn's technique, see the module
-docstring's step table: 1 m at z0-z11, 0.5 m at z12, 0.25 m at z13) runs in
-both modes before encoding, `--no-quantize` to disable. **Measured** on a
-single cell (w2s41) at z10-z13: 26.27 MB quantized vs. 54.45 MB
+**Per-zoom vertical quantization** (Mapterhorn's technique,
+`step(z) = min(2^(19-z) / 256, 1.0)` m: 1 m at z0-z11, 0.5 m at z12, 0.25 m
+at z13, **0.125 m at z14**) runs in both modes before encoding,
+`--no-quantize` to disable. The module docstring's own table stops at z13,
+from when that was the global target; the formula it quotes is what runs, and
+it yields the z14 step above. **Measured** (historical, at the z13 target) on
+a single cell (w2s41) at z10-z13: 26.27 MB quantized vs. 54.45 MB
 unquantized, **-51.75%** -- close to the -54.7% the operator measured on
 the actual Barcelona demo archive; the gap is just that this was one
 cell, not the whole demo bbox.
@@ -343,19 +384,33 @@ rewarp-mode accounting (worked out from GDAL's overview-selection rule --
 pick the finest overview whose resolution is still <= the zoom's target --
 against the DSM COGs' 15/30/60/120/240/480 m overview ladder, apportioned
 by pixel count from the real per-cell `file:size` values in the upstream
-item JSON, e.g. 199,399,399 bytes for `wm91sm1`), z13 alone is **~1.9 TB**
-of the previous ~2.5-3 TB rewarp-mode total -- average mode's total egress
-*is* that ~1.9 TB, since nothing else reads source. (This is a ~35-45%
-egress reduction over the old all-zooms design, concentrated entirely in
-not re-reading zooms 0-12; it is not the "~4x" figure floated before any
-of this was measured -- correcting that here rather than repeating it.)
+item JSON, e.g. 199,399,399 bytes for `wm91sm1`), the max-zoom pass alone is
+**~1.9 TB** of the previous ~2.5-3 TB rewarp-mode total -- average mode's
+total egress *is* that ~1.9 TB, since nothing else reads source. (This is a
+~35-45% egress reduction over the old all-zooms design, concentrated
+entirely in not re-reading the shallower zooms; it is not the "~4x" figure
+floated before any of this was measured -- correcting that here rather than
+repeating it.)
+
+**Moving the target from z13 to z14 does not change that ~1.9 TB.** GDAL
+picks the finest overview whose resolution is still <= the zoom's target,
+and at both z13 and z14 that is already the 15 m native level, so the same
+source bytes are read either way. What z14 does change is the output: the
+max-zoom tile count goes up 4x, from ~10.2M tiles at z13 to **~41M at
+z14**, and the finished archive should be budgeted at roughly **2.5-4x the
+z13 estimate** (the max-zoom level dominates the total, and the per-zoom
+quantization step halves to 0.125 m there, so the tiles compress a little
+less well than a straight 4x would suggest). Scratch space for the working
+MBTiles has to grow with it.
 
 At the cluster's measured ~325 MB/s over 4 streams (see "Compute" above),
-that is very roughly **1.6-2 hours** for the z13 fetch+warp stage alone.
-Deriving z0-z12 from z13 is local-disk-bound, not network-bound (see the
+that is very roughly **1.6-2 hours** for the max-zoom fetch+warp stage
+alone, unchanged by the z14 move since the egress is unchanged. Deriving
+the shallower zooms is local-disk-bound, not network-bound (see the
 derivation timings in the smoke test below: hundreds of tiles/second on a
-laptop), so it adds minutes, not hours, on a 64-core node. **Overall
-estimate: ~2-3 hours for the full z0-z13 global build on one
+laptop), but there are now 4x as many max-zoom tiles to derive from, so
+budget tens of minutes rather than minutes on a 64-core node. **Overall
+estimate: ~2.5-4 hours for the full z0-z14 global build on one
 `cpu_amd` node** -- still an estimate, now a better-grounded one than the
 pre-patch 1.5-6 hours, and still pending the operator's own timing pass on
 the real cluster with the patched code.
@@ -405,10 +460,72 @@ reach a few meters to tens of meters even at the shallowest/coarsest
 zooms -- nowhere near large enough to also pass a genuine encoding bug,
 which misses by orders of magnitude more.
 
+### Void-filling from Copernicus GLO-30 (terrain tiles only, on by default)
+
+User decision, 2026-11-14 (see DESIGN.md's "Known issues" entry for the
+full writeup and the rejected alternatives): a GEM-15 masked void (water +
+buffer, snow/ice, a GLO-30-outlier exclusion) rendered as a 0 m pit under
+3D terrain. **Terrain tiles only** -- never the item COGs/STAC, never the
+overview COG, which keeps its alpha-transparent voids -- now fill those
+pixels from Copernicus GLO-30 instead, on by `--maxzoom` only (every
+shallower zoom inherits already-filled pixels through `--overview-mode
+average`'s box-averaging, with no extra source reads). `--no-void-fill`
+restores the original 0-fill-everything behavior.
+
+**Extra egress: small, not "nil."** GLO-30 tiles are ~22 MB each (raw;
+actual bytes transferred for a bilinear-warped read at 15-19 m/px
+resolution will be less, similar to how GEM-15's own overview-level reads
+cost less than their file's full size). Fetched once per cell that has
+*any* interior NaN at `--maxzoom` -- more cells than just the ~2.5% GEM-15
+masks outright, since any coastline cell also qualifies, though a cell
+that is pure open ocean has no GLO-30 tile to fetch at all ("ocean areas
+do not have tiles" per AWS's own dataset page) and the fetch is a cheap
+404, not a wasted download. Not measured at global scale (out of scope for
+a laptop smoke test); the real run should watch this if it turns out to
+matter, but even a generous estimate (a few thousand coastline-adjacent
+cells x ~22 MB) is two orders of magnitude under the max-zoom pass's ~1.9 TB.
+
+**Measured, not assumed:**
+- EGM2008->EGM96 offset at the Sau reservoir (2.40E, 41.97N): **+0.124 m**.
+- GLO-30 URL for the Sau cell (`w2s41`, SW corner 2E/41N):
+  `Copernicus_DSM_COG_10_N41_00_E002_00_DEM/...tif`, confirmed with a real
+  fetch (200, bounds exactly [2,41]x[3,42] -- the same 1x1-degree footprint
+  as the GEM-15 cell it fills).
+- Built `--cells w2s41 --minzoom 10 --maxzoom 13` (fill on, the default)
+  and decoded the resulting PMTiles' z13 tile over Sau directly: 0 zero-
+  valued pixels left (was 917 before filling), values 356-741 m (mean
+  ~415 m) -- squarely inside the ~360-425 m the operator expected from a
+  direct GLO-30 read there. A cross-section through the void boundary
+  shows a smooth feather (435.8 m at the last real GEM-15 pixel -> 429.5
+  -> 417.5 -> 406.0 -> a ~403.5 m GLO-30 plateau in the middle -> climbing
+  back up to 434.8 m at the other real edge), not a hard lip.
+- The archive's own `attribution`/`description` metadata round-trips
+  through `pmtiles convert` and `pmtiles show` correctly, including the
+  licence-required modified-data notice (see DESIGN.md for the exact
+  wording and where it came from).
+- The same single-cell build's z10 tile still fails `--verify` by 683 m --
+  this is the *pre-existing*, already-documented single-cell sharding
+  artifact (a missing-neighbor z13 tile cascading void up through
+  derivation; see the "average vs. rewarp agreement" measurement above),
+  reproduced at the exact same (z,x,y) as before void-filling existed.
+  Confirmed unrelated to filling, not a new defect.
+
+**`--verify`'s policy for filled pixels**, since GEM-15 (hence this
+check's own reference, always a pure GEM-15 rewarp) has no data to compare
+against where a pixel was filled: those pixels are excluded from the
+normal decoded-vs-reference diff (already true, incidentally, since the
+candidate selection is driven by where the reference has data) and
+instead get a separate, looser sanity pass -- finite, and within
+[-500, 9000] m -- over a sample of them, logged as "void-fill sanity
+OK/FAIL" alongside the normal result. This does not independently verify
+the *value* GLO-30 produced (that would need re-deriving the whole fill
+pipeline a second time -- a deliberate scope cut, not an oversight); it
+still catches a gross encoding bug, just not a subtly-wrong fill value.
+
 ### DTM terrain (optional, not in the published asset contract yet)
 
 ```bash
-python3 tools/build_terrain.py --band dtm --minzoom 0 --maxzoom 13 \
+python3 tools/build_terrain.py --band dtm --minzoom 0 --maxzoom 14 \
   --output staging/publish/gem-15/terrain/gem-15-dtm-terrarium.pmtiles
 ```
 
@@ -437,17 +554,24 @@ area with plenty of interior, non-steep pixels at every zoom (unlike the
 wm91sm1 smoke-test cell, which is why wm91sm1 found the sampling and
 warp-chunking issues described in step 3 and this real-world run did not).
 
-**That measured run predates this revision of `build_terrain.py`** (it
-used the original rewarp-only design, no quantization, no `void_masks`,
-none of step 3's P0 fixes). It is still live and still correct -- nothing
-above suggests its bytes are wrong -- but a rebuild with the current
-script would both apply quantization (measured -51.75% on a single cell in
-step 3; expect a similarly large reduction here) and default to
-`--overview-mode average`, reading source only at `--maxzoom` (14 for this
-file, not 13) instead of at every zoom from 0 to 14. Worth doing before
-the global build if this demo's size/egress matters on its own, but not
-required: this is a judgment call for whoever runs it, not a correction to
-anything already published.
+**That measured run predates this revision of `build_terrain.py`**, and a
+rebuild is now required, not optional: the live file is the one with the
+user-reported Sau reservoir "hole" (see DESIGN.md's "Known issues" entry),
+and void-filling (this script's current default) is the fix. Rebuild with
+the exact command above -- `--no-void-fill` is not needed, filling is on
+by default -- and republish over the existing object at the same key (the
+RUNBOOK's step 7/8 upload-then-publish order already handles this; no
+other file or URL changes). While rebuilding, this version also applies
+quantization (measured -51.75% on a single cell in step 3; expect a
+similarly large reduction here) and defaults to `--overview-mode average`,
+reading source only at `--maxzoom` (14 for this file, not 13) instead of
+at every zoom from 0 to 14 -- both are incidental improvements that come
+along for free, not the reason for the rebuild.
+
+After rebuilding, confirm the fix the same way the QC investigation did:
+decode the new file's tile over Sau (z13: `mercantile.tile(2.40, 41.965,
+13)` -> x=4150, y=3042) and check it has no 0 m pixels where the old one
+did.
 
 ## 5. Thumbnail (committed to git, not staged)
 
@@ -558,7 +682,7 @@ Canaries excluded (roughly):
 BBOX=-9.5,36.0,3.5,43.8
 
 python3 tools/build_overview.py --bbox $BBOX --workers 16
-python3 tools/build_terrain.py --band dsm --minzoom 0 --maxzoom 13 --bbox $BBOX \
+python3 tools/build_terrain.py --band dsm --minzoom 0 --maxzoom 14 --bbox $BBOX \
   --output /tmp/country-dryrun-dsm-terrarium.pmtiles
 ```
 

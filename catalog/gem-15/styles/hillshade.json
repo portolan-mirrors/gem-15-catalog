@@ -4,8 +4,8 @@
   "metadata": {
     "description": "Shaded relief of the GEM-15 15 m DSM on a neutral ground, with no elevation color at all. This is the style for reading landform and texture rather than height: terraces, levees, quarry benches, dune fields, landslide scars and, because GEM-15 is a surface model, individual buildings and tree lines. Nothing here encodes absolute elevation, so it is safe over any terrain range and at any latitude in the covered area.",
     "portolan:hillshade-method": "hillshade-method is set to 'combined', whose shading intensity scales with slope, so gentle ground stays legible while steep faces go properly dark. That is the right trade-off when the hillshade is the only thing on the map. MapLibre also offers 'igor' (deliberately flat, meant to sit under other layers, which is what this collection's hypsometric style uses), 'multidirectional' (several light sources, softer and less directional), 'basic' (plain Lambertian cosine shading) and 'standard' (the legacy algorithm). hillshade-method requires MapLibre GL JS 5.5.0 or newer; older clients ignore it and fall back to the legacy shading.",
-    "portolan:caveats": "Elevations are meters above the EGM96 geoid, not ellipsoidal heights and not EGM2008; apply a geoid correction before combining with other DEMs for altimetry. Surface model (DSM), not bare earth, so canopy and buildings are shaded as terrain. GEM-15 encodes NaN and ocean alike as 0 m, so flat water and missing data both shade as a level plain. Coverage runs 84N to 61S and excludes Russia, China, Mongolia and Greenland. India is intentionally offset upstream.",
-    "portolan:attribution": "This dataset is produced by Google | CC-BY-4.0"
+    "portolan:caveats": "Elevations are meters above the EGM96 geoid, not ellipsoidal heights and not EGM2008; apply a geoid correction before combining with other DEMs for altimetry. Surface model (DSM), not bare earth, so canopy and buildings are shaded as terrain. GEM-15 masks about 2.5 % of its cells (water, snow and ice, salt pans, low-texture surfaces), and the terrain tiles fill those voids from Copernicus GLO-30 before encoding, so an inland void shades as real terrain rather than as a flat pit. A filled pixel is GLO-30, not GEM-15, at 30 m rather than 15 m. Ocean encodes as 0 m and shades as a level plain. Coverage runs 84N to 61S and excludes Russia, China, Mongolia and Greenland. India is intentionally offset upstream.",
+    "portolan:attribution": "This dataset is produced by Google | CC-BY-4.0. The terrain tiles fill GEM-15 voids from Copernicus GLO-30, which adds a required notice: produced using Copernicus WorldDEM-30 © DLR e.V. 2010-2014 and © Airbus Defence and Space GmbH 2014-2018 provided under COPERNICUS by the European Union and ESA; all rights reserved"
   },
   "center": [2.165, 41.395],
   "zoom": 11,
@@ -16,8 +16,8 @@
       "encoding": "terrarium",
       "tileSize": 256,
       "minzoom": 0,
-      "maxzoom": 13,
-      "attribution": "This dataset is produced by Google | CC-BY-4.0"
+      "maxzoom": 14,
+      "attribution": "This dataset is produced by Google | CC-BY-4.0 | produced using Copernicus WorldDEM-30 © DLR e.V. 2010-2014 and © Airbus Defence and Space GmbH 2014-2018 provided under COPERNICUS by the European Union and ESA; all rights reserved"
     }
   },
   "layers": [
