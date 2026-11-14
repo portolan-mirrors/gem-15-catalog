@@ -85,6 +85,143 @@ stops one tile edge from punching a hole in its neighbour.
 geotiff.js weighs about 540 kB, and the page requests it only when a reader
 first turns the imagery on, so the elevation path costs no extra bytes.
 
+## Comparing three terrain tile sources
+
+`compare.html` draws GEM-15 beside two other public terrarium tile sets, in
+three synced panes over the same view. A click reads one elevation out of each
+of them. GitHub Pages serves the page at
+<https://portolan-mirrors.github.io/gem-15-catalog/maplibre-terrain/compare.html>.
+
+The page is held inside the GEM-15 demo box, longitude 1 to 4 and latitude 40
+to 42. Outside that box only two of the three panes have anything to draw.
+Preset views cover Barcelona city center, Montserrat, the Sau reservoir, and
+the Llobregat plain.
+
+### Source by source
+
+| | GEM-15 demo | Mapterhorn | AWS Terrain Tiles |
+| --- | --- | --- | --- |
+| Model | surface, DSM | terrain, their word | bare earth |
+| Tiles | terrarium WebP PMTiles | terrarium WebP PMTiles | terrarium PNG |
+| Tile size | 256 px | 512 px | 256 px |
+| Zooms | 0 to 14 | 0 to 12 planet, 13 to 17 shards | 0 to 15 |
+| Deepest tile here | z14 | z16 | z15 |
+| Source here | GEM-15 at 15 m | not published per tile | EU-DEM at 30 m |
+
+GEM-15 is the only one of the three that measures the surface. Its heights
+include buildings and canopy, so over a city block or a forest it reads higher
+than the other two, and that gap is signal rather than error. The demo archive
+also quantises to whole metres below zoom 14, measured on the live file, so a
+probe compares numbers at zoom 14 and nowhere shallower.
+
+### What was verified about the Mapterhorn archive
+
+Everything below was read from the live files and from the Mapterhorn README on
+2026-11-14, not assumed.
+
+The archive set is at <https://source.coop/mapterhorn/mapterhorn>. Their README
+gives the layout and this page follows it exactly. One `planet.pmtiles` covers
+zoom 0 to 12. One archive per zoom 6 tile covers the deeper zooms, named
+`6-{x >> (z - 6)}-{y >> (z - 6)}.pmtiles`. A full listing of the prefix returns
+611 keys: 459 PMTiles archives, `README.md`, `attribution.json`,
+`download_urls.json`, and 149 raw source tarballs under `sources/`. The tile
+URL this page builds is
+
+```
+https://s3.us-west-2.amazonaws.com/us-west-2.opendata.source.coop/mapterhorn/mapterhorn/<name>.pmtiles
+```
+
+The same objects also answer on `https://data.source.coop/mapterhorn/mapterhorn/`.
+This page uses the address their README publishes.
+
+PMTiles v3 headers read over range requests: `planet.pmtiles` is WebP, zoom 0
+to 12, global, and 355 GB. `6-32-23.pmtiles`, the shard that holds Barcelona,
+is WebP, zoom 13 to 17, over longitude 0 to 5.625 and latitude 40.98 to 45.09,
+and 9.2 GB. Tiles are 512 px, which their own MapLibre example declares and a
+decode confirms. The encoding is terrarium.
+
+**The maxzoom the shard declares is not the maxzoom it serves here.** The
+header says 17. Every zoom 17 lookup over this box returns no tile, at all four
+preset places. Zoom 16 answers at all four. So the source stops at 16, which
+keeps MapLibre from requesting tiles that are not there. The probe walks down
+from 17 until a tile answers, then reports the zoom it used. The Swiss shard,
+`6-33-22.pmtiles`, does serve zoom 17 over the Matterhorn, so the gap over
+Catalonia is a per-area build decision rather than a broken archive.
+
+**Which source Mapterhorn uses here is not published, and this page does not
+guess.** Their catalogue, `attribution.json`, lists 134 entries. Among them are
+a Spanish 2 m terrain model and a 5 m one, both CC-BY 4.0 from scne.es, and a
+global Copernicus GLO-30 at 30 m. Nothing in the archive or the catalogue says
+which of those built one tile, and unlike the AWS set there is no per-tile
+source header to read.
+
+An attempt to infer the source resolution from the tiles failed. The record of
+that attempt belongs here so nobody repeats it. A profile across the Montserrat
+face at zoom 16 changes by 0.03 to 0.28 m per 0.89 m pixel. It also keeps some
+residual structure at a 30 m period, which looked like a coarse source
+upsampled. The control killed the idea. The same measurement over the
+Matterhorn, where Mapterhorn has swissALTI3D at 0.5 m, shows that periodic
+structure more strongly rather than less. The measurement reads terrain
+character, not source grid. So the preceding table says "not published per
+tile" and leaves it there.
+
+Attribution follows their README, which states that Mapterhorn uses the sources
+listed at <https://mapterhorn.com/attribution>, and their own MapLibre example
+credits "© Mapterhorn" with a link to that page. The page prints that string
+and names the count of sources behind it. That is their whole stated
+requirement, and it is also the only form that remains correct when the source
+behind a tile is unknown.
+
+### What was verified about the AWS set
+
+The tiles are at `https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png`,
+terrarium PNG, 256 px. Zoom 15 answers 200 and zoom 16 answers 404, so the
+source stops at 15. The registry entry describes the set as "bare-earth terrain
+heights" and names Mapzen, a Linux Foundation project, as its manager.
+
+Over Catalonia the underlying source is EU-DEM at 30 m, so the deep zooms are
+upsampled here too. The page can say so per tile rather than in general. Each
+response includes an `x-amz-meta-x-imagery-sources` header with the source
+files that went into it, and the bucket exposes that header to cross-origin
+readers.
+The probe prints it.
+
+Attribution is quoted from the required-attribution block of
+[the joerd attribution document](https://github.com/tilezen/joerd/blob/master/docs/attribution.md),
+keeping the European entry that this view draws and the global fallbacks.
+
+### CORS and range requests
+
+Each of the three hosts answered an `Origin` header probe on 2026-11-14 with
+`access-control-allow-origin: *`. Both Source Cooperative hosts answer 206 to a
+`Range` request. The AWS bucket answers an `OPTIONS` preflight with 200 and
+allows `GET`. So a browser reads the three of them directly, with no proxy and
+no tile server.
+
+A GitHub release asset is the one host that cannot serve these tiles. It honours
+range requests but sends no CORS headers, and its preflight answers 405, so the
+browser blocks every tile request. `barcelona.html` records the same note.
+
+### The probe path for one pixel
+
+On a click the page asks each source for the tile that covers the point, at that
+source's best zoom. GEM-15 answers at zoom 14, Mapterhorn at the deepest zoom
+that answers, and AWS at zoom 15. The page then fetches the tile bytes and decodes
+them with `createImageBitmap`. It draws the bitmap onto a 1 by 1 canvas at a
+negative offset, which lifts out the target pixel alone and allocates no full
+tile of image data. Then
+`elevation = R * 256 + G + B / 256 - 32768`.
+
+Fetching the bytes rather than pointing an `img` element at the URL also avoids
+canvas tainting, so the page needs no `crossOrigin` attribute to read the
+pixel back.
+
+Terrarium has no no-data value. A pixel of 0, 0, 0 decodes to &minus;32768 m,
+which is the floor of the encoding rather than a place on Earth, so the probe treats
+it and a transparent pixel as no value and prints an em dash. A failed fetch, a
+missing tile and an undecodable tile all end the same way, and the panel says
+which zooms it tried and how each one came back.
+
 ## The data is not published yet
 
 This catalog has not had its first data publish, so the terrain PMTiles asset
