@@ -97,6 +97,40 @@ to 42. Outside that box only two of the three panes have anything to draw.
 Preset views cover Barcelona city center, Montserrat, the Sau reservoir, and
 the Llobregat plain.
 
+### Tilt
+
+Each pane builds a MapLibre terrain mesh from the same `raster-dem` source that
+it draws. So an oblique view shows three separate meshes, not one mesh under
+three skins. GEM-15 measures the top of the surface, so a city block
+becomes a raised block in its mesh. The AWS pane renders the same block as one
+smooth slope.
+
+The page opens flat, at a pitch of 0. The `3D` button tilts all three panes to
+a pitch of 60. A right-drag or a ctrl-drag also rotates and tilts them. The
+compass on the first pane restores north up and flat. A shared relief slider
+scales every mesh by one factor, from 0 to 3, and it opens at 1. One factor
+across the panes is a deliberate choice. A per-pane exaggeration would flatter
+one source, and the three panes would no longer be readable against each other.
+
+Center, zoom, bearing, and pitch all sync, and the sync cannot feed back on
+itself. A reentrancy flag discards the move events that the follower panes fire
+while the sync moves them. A comparison against the last view pushed discards
+the duplicate event that arrives when MapLibre reports one gesture as a move
+and as a rotate.
+
+Terrain is stricter than drawing about the maxzoom that a source declares. If a
+`raster-dem` source declares a maxzoom deeper than its archive, the tiles for
+that zoom are absent, and the mesh tears or flattens there. Each of the three
+source definitions carries the measured maximum, 14, 16, and 15, and terrain
+reuses those definitions.
+
+The probe works tilted. With terrain set, MapLibre unprojects a click against
+the mesh, so the probe reads the point on the surface that the reader hit. A
+tilted pane adds one case that a flat pane cannot produce. A click on the sky,
+or past the terrain horizon, unprojects far outside the view. No point out there
+has three sources to compare, so the page discards that click rather than
+answer it with three em dashes.
+
 ### Source by source
 
 | | GEM-15 demo | Mapterhorn | AWS Terrain Tiles |

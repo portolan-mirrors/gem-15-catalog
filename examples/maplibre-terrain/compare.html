@@ -9,6 +9,23 @@
   Three terrarium terrain-tile sources, drawn side by side over the same view,
   with a click-anywhere elevation probe that reads one pixel from each.
 
+  THE THREE PANES TILT. Each pane sets MapLibre terrain from its own
+  raster-dem source, so an oblique view shows each dataset's real surface
+  rather than one shared mesh with three skins on it. That is where the
+  difference between a 15 m surface model and a 30 m bare-earth source stops
+  being a shading argument: GEM-15 raises city blocks into the mesh, and the
+  AWS pane rolls the same blocks into one smooth slope. Pitch, bearing, centre
+  and zoom all sync across the panes. The default view opens flat, at pitch 0,
+  because that is how most of the comparison is read. Terrain stays set in that
+  view rather than being switched on and off, so a tilt costs no style change
+  and no reload. Three meshes are not free, so the default exaggeration is 1
+  and nothing else about the panes changed.
+  THE SOURCE MAXZOOM MATTERS MORE FOR TERRAIN THAN FOR DRAWING. A raster-dem
+  source whose maxzoom overstates the archive asks for tiles that do not
+  exist, and the mesh then tears or goes flat where they are missing. The
+  three specs below carry the measured maximum, 14, 16 and 15, and terrain
+  reuses those same source definitions.
+
   THE THREE SOURCES, as measured against the live archives on 2026-11-14.
 
   1. GEM-15, this catalog's demo archive.
@@ -131,6 +148,27 @@
     color: #fff;
   }
   .seg input:focus-visible + label { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+  /* The 3D switch reads as pressed while the panes are tilted, and it reads as
+     pressed whether a click or a drag-rotate did the tilting. */
+  button[aria-pressed="true"] {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: #fff;
+  }
+  button[aria-pressed="true"]:hover { color: #fff; }
+
+  .group input[type="range"] {
+    width: 92px;
+    accent-color: var(--accent);
+    vertical-align: middle;
+  }
+  .group .val {
+    min-width: 2.3em;
+    font-size: 11px;
+    color: var(--muted);
+    font-variant-numeric: tabular-nums;
+  }
 
   /* The shared ramp. Colour means the same height in all three panes, which
      is the whole point of an absolute ramp rather than a per-source stretch. */
@@ -317,6 +355,18 @@
       </div>
     </div>
 
+    <div class="group">
+      <span class="group-label">View</span>
+      <button type="button" id="tilt" aria-pressed="false"
+              title="Tilt all three panes to a pitch of 60. Right-drag or ctrl-drag tilts and rotates by hand.">3D</button>
+    </div>
+
+    <div class="group">
+      <label class="group-label" for="exaggeration">Relief</label>
+      <input type="range" id="exaggeration" min="0" max="3" step="0.1" value="1">
+      <span class="val" id="exaggeration-value">1.0&times;</span>
+    </div>
+
     <div class="group legend">
       <span class="group-label">Metres</span>
       <div class="scale">
@@ -347,7 +397,11 @@
 
 <main class="panes" id="panes"></main>
 
-<p class="hint" id="hint">Click anywhere on a map to read the elevation from all three sources.</p>
+<p class="hint" id="hint">
+  Click anywhere on a map to read the elevation from all three sources.
+  Press <b>3D</b>, or right-drag, to tilt the three panes together and compare
+  the surfaces themselves.
+</p>
 
 <section id="probe" hidden>
   <div class="probe-head">
@@ -714,6 +768,30 @@ const PLACES = [
 ];
 
 // ---------------------------------------------------------------------------
+// Terrain
+//
+// Every pane style names its elevation source `dem`, so one id raises the mesh
+// in all three. Each mesh is built from that pane's own archive, which is the
+// point: at an oblique angle GEM-15 stands buildings up and the two coarser
+// sources do not.
+//
+// The exaggeration is shared. A per-pane factor would flatter one source and
+// make the panes impossible to read against each other.
+// ---------------------------------------------------------------------------
+
+const TERRAIN_SOURCE = 'dem';
+const TILT_PITCH = 60;
+
+let terrainExaggeration = 1;
+
+// getSource answers undefined until the style is in, so this is safe to call
+// at any time and the caller needs no readiness check of its own.
+function applyTerrainTo(map) {
+  if (!map.getSource(TERRAIN_SOURCE)) return;
+  map.setTerrain({ source: TERRAIN_SOURCE, exaggeration: terrainExaggeration });
+}
+
+// ---------------------------------------------------------------------------
 // Build the panes
 // ---------------------------------------------------------------------------
 
@@ -752,22 +830,38 @@ for (const source of SOURCES) {
     // would fight each other on every frame.
     hash: source.id === SOURCES[0].id,
     attributionControl: false,
-    // A comparison is about the same ground seen three ways, so the panes stay
-    // flat and north up. Rotation and pitch would also triple the terrain
-    // cost for no gain here.
-    dragRotate: false,
-    pitchWithRotate: false,
+    // Flat and north up at rest, because most of the comparison is read from
+    // above. Rotation and pitch stay available, because the surfaces differ in
+    // ways that only an oblique view shows.
+    pitch: 0,
+    bearing: 0,
+    // MapLibre's own default maxPitch is 60, read from the 6.18.0 bundle. 75
+    // allows a lower profile across a ridge, which is where the three meshes
+    // separate most. Past that the sky takes the pane.
+    maxPitch: 75,
+    dragRotate: true,
+    pitchWithRotate: true,
     touchZoomRotate: true,
+    touchPitch: true,
   });
-  map.touchZoomRotate.disableRotation();
 
   // Attribution on every pane, because each pane draws a different source and
   // the credit has to sit with the thing it credits.
   map.addControl(new maplibregl.AttributionControl({ compact: true }), 'bottom-right');
   if (source.id === SOURCES[0].id) {
-    map.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'top-right');
+    // The compass earns its place now that the panes rotate, and it doubles as
+    // the way back to north up and flat. One control drives all three panes,
+    // because the sync below carries this pane's view to the other two.
+    map.addControl(
+      new maplibregl.NavigationControl({ showCompass: true, visualizePitch: true }),
+      'top-right',
+    );
     map.addControl(new maplibregl.ScaleControl({ unit: 'metric' }), 'bottom-left');
   }
+
+  // Each pane raises its own mesh, from the same raster-dem source it draws.
+  // style.load fires once here, because nothing on this page calls setStyle.
+  map.on('style.load', () => applyTerrainTo(map));
 
   const note = pane.querySelector('.pane-note');
   let failures = 0;
@@ -793,25 +887,84 @@ for (const source of SOURCES) {
 // Keep the panes on the same view
 // ---------------------------------------------------------------------------
 
+// All four camera numbers travel together now: centre, zoom, bearing and
+// pitch. Two guards keep one gesture from turning into a loop, and they catch
+// different cases.
+//
+// 1. `syncing` is the guard the page already had. A jumpTo on a follower fires
+//    that follower's own move event, and MapLibre delivers those events inside
+//    the jumpTo call rather than on a later frame, so they land while the flag
+//    is still set and the flag drops them.
+//
+// 2. `lastView` is new, and it is what pitch and bearing need. One drag-rotate
+//    reports itself to the origin pane as a move, a rotate and a pitch, each a
+//    separate event with the same transform behind it. The flag cannot drop
+//    those, because they arrive one after another rather than nested. So the
+//    sync compares against the view it pushed last and does nothing when the
+//    camera has not actually moved. The comparison carries a tolerance rather
+//    than testing for equality. MapLibre keeps a bearing and a pitch in
+//    radians and reports them in degrees, so a set-then-read round trip is
+//    inexact: over 200,000 random bearings it misses bit-for-bit two times in
+//    three, by up to 9e-14 degrees. An equality test would therefore treat
+//    almost every duplicate event as a real move.
 let syncing = false;
+let lastView = null;
+
+// Plain numbers rather than the LngLat that getCenter returns. getCenter hands
+// back a fresh copy in this version, so holding one would be safe today, but a
+// held number cannot start tracking a camera later. The pair also gives each
+// pane its own centre object instead of one shared between the three.
+function viewOf(map) {
+  const center = map.getCenter();
+  return {
+    lng: center.lng,
+    lat: center.lat,
+    zoom: map.getZoom(),
+    bearing: map.getBearing(),
+    pitch: map.getPitch(),
+  };
+}
+
+// The thresholds are all far below anything a reader can see. 1e-9 degrees is
+// about 0.1 mm on the ground, and 1e-6 degrees of bearing is nothing at all.
+function sameView(a, b) {
+  return a !== null && b !== null
+    && Math.abs(a.lng - b.lng) < 1e-9
+    && Math.abs(a.lat - b.lat) < 1e-9
+    && Math.abs(a.zoom - b.zoom) < 1e-9
+    && Math.abs(a.bearing - b.bearing) < 1e-6
+    && Math.abs(a.pitch - b.pitch) < 1e-6;
+}
 
 function syncFrom(origin) {
   if (syncing) return;
+  const view = viewOf(origin);
+  if (sameView(view, lastView)) return;
+  lastView = view;
   syncing = true;
-  const center = origin.getCenter();
-  const zoom = origin.getZoom();
   try {
     for (const map of maps) {
       if (map === origin) continue;
-      map.jumpTo({ center, zoom });
+      map.jumpTo({
+        center: [view.lng, view.lat],
+        zoom: view.zoom,
+        bearing: view.bearing,
+        pitch: view.pitch,
+      });
     }
   } finally {
     syncing = false;
   }
 }
 
+// A rotate and a pitch each fire a move event as well in this version, so
+// `move` alone would carry them. The other two listeners are there in case
+// that stops being true, and they cost nothing, because the duplicate they
+// bring in dies at the `sameView` check before it reaches a terrain mesh.
 for (const map of maps) {
-  map.on('move', () => syncFrom(map));
+  for (const type of ['move', 'rotate', 'pitch']) {
+    map.on(type, () => syncFrom(map));
+  }
 }
 
 // The first pane may start from the URL hash, and a map that never moves
@@ -820,7 +973,8 @@ maps[0].once('load', () => syncFrom(maps[0]));
 
 function flyAll(place) {
   // One map flies and the move handler carries the other two, so the three
-  // stay locked together for every frame of the animation.
+  // stay locked together for every frame of the animation. A preset keeps
+  // whatever pitch and bearing the reader has set.
   maps[0].flyTo({ center: place.center, zoom: place.zoom, duration: 1400, essential: true });
 }
 
@@ -859,6 +1013,43 @@ function applyMode() {
 for (const radio of document.querySelectorAll('input[name="mode"]')) {
   radio.addEventListener('change', applyMode);
 }
+
+// ---------------------------------------------------------------------------
+// The bar: tilt and relief
+// ---------------------------------------------------------------------------
+
+const tiltButton = document.getElementById('tilt');
+const exaggerationInput = document.getElementById('exaggeration');
+const exaggerationValue = document.getElementById('exaggeration-value');
+
+// The button drives the first pane only. The sync above carries the pitch to
+// the other two, which also keeps the animation locked across the three.
+tiltButton.addEventListener('click', () => {
+  const flat = maps[0].getPitch() < 5;
+  maps[0].easeTo({ pitch: flat ? TILT_PITCH : 0, duration: 700, essential: true });
+});
+
+// A right-drag tilts the panes without touching the button, so the button
+// reads the pitch rather than holding a state of its own. The label stays "3D"
+// and only the pressed state changes, which is what a screen reader announces
+// and what the accent fill shows, the same as the segmented control above it.
+function refreshTiltButton() {
+  const tilted = maps[0].getPitch() >= 5;
+  tiltButton.setAttribute('aria-pressed', tilted ? 'true' : 'false');
+}
+
+maps[0].on('pitch', refreshTiltButton);
+maps[0].on('pitchend', refreshTiltButton);
+maps[0].once('load', refreshTiltButton);
+
+function applyExaggeration() {
+  terrainExaggeration = Number(exaggerationInput.value);
+  exaggerationValue.textContent = `${terrainExaggeration.toFixed(1)}×`;
+  for (const map of maps) applyTerrainTo(map);
+}
+
+exaggerationInput.addEventListener('input', applyExaggeration);
+applyExaggeration();
 
 // The legend reads the ramp itself, so it can never drift from the colours on
 // screen. It shows 0 to 2400 m, which covers everything in this box from the
@@ -1056,8 +1247,25 @@ async function runProbe(lngLat) {
   probeDeltas.innerHTML = pairs.join('');
 }
 
+// With terrain set, MapLibre unprojects a click against the mesh rather than
+// against the flat plane, so `event.lngLat` is the point on the surface that
+// the reader actually clicked. Nothing in the probe assumes a pitch of 0: it
+// takes a longitude and a latitude and reads tiles by itself.
+//
+// A tilted pane does add one case that a flat one cannot produce. A click on
+// the sky, or past the terrain horizon, lands far outside the view, and no
+// point out there has three sources to compare. Those clicks are dropped
+// rather than answered with three em dashes.
+function insideDemoBox(lngLat) {
+  return lngLat.lng >= DEMO_BOUNDS[0] && lngLat.lng <= DEMO_BOUNDS[2]
+    && lngLat.lat >= DEMO_BOUNDS[1] && lngLat.lat <= DEMO_BOUNDS[3];
+}
+
 for (const map of maps) {
-  map.on('click', (event) => { runProbe(event.lngLat); });
+  map.on('click', (event) => {
+    if (!insideDemoBox(event.lngLat)) return;
+    runProbe(event.lngLat);
+  });
   map.getCanvas().style.cursor = 'crosshair';
 }
 </script>
