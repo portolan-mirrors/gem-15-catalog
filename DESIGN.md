@@ -82,9 +82,12 @@ mapterhorn-gem15/
 ├── collection.json         # id: mapterhorn-gem15
 ├── README.md  AGENTS.md  llms.txt
 ├── thumbnail.png           # in git, like gem-15's
-├── mapterhorn-gem15-barcelona.pmtiles  (uploaded by hand; see below)
-├── mapterhorn-gem15-cusco.pmtiles      (uploaded by hand)
-├── mapterhorn-gem15-atlas.pmtiles      (uploaded by hand)
+├── mapterhorn-gem15-barcelona.pmtiles      (uploaded by hand; see below)
+├── mapterhorn-gem15-barcelona-dtm.pmtiles  (uploaded by hand)
+├── mapterhorn-gem15-cusco.pmtiles          (uploaded by hand)
+├── mapterhorn-gem15-cusco-dtm.pmtiles      (uploaded by hand)
+├── mapterhorn-gem15-atlas.pmtiles          (uploaded by hand)
+├── mapterhorn-gem15-atlas-dtm.pmtiles      (uploaded by hand)
 └── styles/
     ├── atlas.json          # default: color-relief tint + hillshade
     ├── barcelona.json      # same, maxzoom 12
@@ -111,14 +114,23 @@ mapterhorn-gem15/
 | key | href | roles | type |
 |---|---|---|---|
 | `terrain-barcelona` | `./mapterhorn-gem15-barcelona.pmtiles` | `data`, `visual` | `application/vnd.pmtiles` |
+| `terrain-barcelona-dtm` | `./mapterhorn-gem15-barcelona-dtm.pmtiles` | `data`, `visual` | `application/vnd.pmtiles` |
 | `terrain-cusco` | `./mapterhorn-gem15-cusco.pmtiles` | `data`, `visual` | `application/vnd.pmtiles` |
+| `terrain-cusco-dtm` | `./mapterhorn-gem15-cusco-dtm.pmtiles` | `data`, `visual` | `application/vnd.pmtiles` |
 | `terrain-atlas` | `./mapterhorn-gem15-atlas.pmtiles` | `data`, `visual` | `application/vnd.pmtiles` |
+| `terrain-atlas-dtm` | `./mapterhorn-gem15-atlas-dtm.pmtiles` | `data`, `visual` | `application/vnd.pmtiles` |
 | `style-atlas` | `./styles/atlas.json` | `style`, `default` | `application/vnd.mapbox.style+json` |
 | `style-barcelona` | `./styles/barcelona.json` | `style` | `application/vnd.mapbox.style+json` |
 | `style-cusco` | `./styles/cusco.json` | `style` | `application/vnd.mapbox.style+json` |
 | `documentation` | `./llms.txt` | `documentation` | `text/plain` |
 | `README` | `./README.md` | `metadata` | `text/markdown` |
 | `thumbnail` | `./thumbnail.png` | `thumbnail` | `image/png` |
+
+An unsuffixed asset key and file name is the surface model. Only the
+bare-earth band took a `-dtm` suffix at build time, and the metadata follows
+the published bytes rather than renaming them. Each asset title states its band,
+so nothing relies on reading an absent suffix. Both bands of an area share a
+footprint, a maximum zoom and a tile count.
 
 The PMTiles take `data` as well as `visual`, unlike gem-15's terrain tiles.
 There they are a derivative of item COGs the catalog also describes; here they
@@ -280,8 +292,22 @@ maintainer suggested running the Mapterhorn terrain pipeline over GEM-15
 tiffs. We did that on a fork — `cholmes/mapterhorn`, branch `gem-15-source`,
 archives built at commit `86d8494`, forked from upstream `main` at `2c4195d`
 — and published three
-small test archives. Catalonia covers 4 cells to maxzoom 12. Cusco and the
-High Atlas cover 1 cell each to maxzoom 13.
+small test archives per band. Catalonia covers 4 cells to maxzoom 12. Cusco
+and the High Atlas cover 1 cell each to maxzoom 13. Each area has both the
+GEM-15 surface model and its bare-earth model, which makes six archives. The
+DTM set went up on 2026-11-15 as well, built in 33 m 38 s.
+
+**Why both bands.** Mapterhorn's production sources are national bare-earth
+models and its purpose is cartographic terrain, so the DTM is the closer
+analog to what the pipeline normally consumes. The DSM stays the like-for-like
+comparison against Copernicus GLO-30, which is itself a surface model. The
+documentation scopes the difference carefully: the DTM reads at or below the
+DSM at every probe point, and the gap is a usable height above ground on flat
+terrain alone. Each archive is resampled on its own, so on a ridge at a zoom
+13 pixel of about 9.55 m the sub-pixel landing difference can exceed the real
+gap. Over a filled void the gap is zero by construction, because
+GLO-30 supplies the same surface to both bands. The DTM is also the more
+experimental band, since GEM-15 predicts it from the DSM with a model.
 
 **The framing is binding, not stylistic.** Nobody opened a pull request
 upstream and nothing was merged. The Mapterhorn project has not endorsed the
@@ -341,6 +367,13 @@ bounds into every PMTiles header, so all three archives claim the whole world.
 The real tile footprints were measured from each archive's root directory and
 are what `extent.spatial.bbox` carries. Documented as a known issue on both
 the collection and the fork's notes.
+
+**One style per area, on the surface model.** A style's source takes one
+URL, so a DTM style would be a byte-for-byte copy with one line changed. The
+ramp, the hillshade, the tile size and the maximum zoom are identical across
+the two bands, so a second set would only be another place to forget a ramp
+change. Each style records the sibling DTM archive and the one-line swap in
+its `portolan:dtm-variant` metadata, and the README and AGENTS say the same.
 
 **The thumbnail** is rendered by `tools/build_mapterhorn_thumbnail.py` from
 the published High Atlas archive over range requests, rather than from the

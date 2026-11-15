@@ -22,22 +22,36 @@ The collection publishes no items and no elevation COGs. The elevation source
 is the [`gem-15`](../gem-15/collection.json) collection in this catalog, which
 is itself a metadata mirror of Google's bucket.
 
-| Asset key | Archive | Max zoom | Tiles | Size |
-|---|---|---|---|---|
-| `terrain-barcelona` | `mapterhorn-gem15-barcelona.pmtiles` | 12 | 10,931 | 42,064,200 B |
-| `terrain-cusco` | `mapterhorn-gem15-cusco.pmtiles` | 13 | 10,929 | 129,375,429 B |
-| `terrain-atlas` | `mapterhorn-gem15-atlas.pmtiles` | 13 | 10,931 | 114,564,655 B |
+| Asset key | Archive | Band | Max zoom | Tiles | Size |
+|---|---|---|---|---|---|
+| `terrain-barcelona` | `mapterhorn-gem15-barcelona.pmtiles` | DSM | 12 | 10,931 | 42,064,200 B |
+| `terrain-barcelona-dtm` | `mapterhorn-gem15-barcelona-dtm.pmtiles` | DTM | 12 | 10,931 | 37,912,542 B |
+| `terrain-cusco` | `mapterhorn-gem15-cusco.pmtiles` | DSM | 13 | 10,929 | 129,375,429 B |
+| `terrain-cusco-dtm` | `mapterhorn-gem15-cusco-dtm.pmtiles` | DTM | 13 | 10,929 | 129,224,207 B |
+| `terrain-atlas` | `mapterhorn-gem15-atlas.pmtiles` | DSM | 13 | 10,931 | 114,564,655 B |
+| `terrain-atlas-dtm` | `mapterhorn-gem15-atlas-dtm.pmtiles` | DTM | 13 | 10,931 | 112,345,297 B |
+
+**An unsuffixed name is the surface model.** The archive file names came from
+the build, where the bare-earth band took a `-dtm` suffix and the surface
+band took none, so the asset keys follow the file names rather than inventing
+a `-dsm` one. Read the band
+off the table or off the asset title, never off the absence of a suffix alone.
 
 Each one is terrarium-encoded 512 px lossless WebP, PMTiles specification v3,
 clustered, minimum zoom 0. The figures above came from the PMTiles headers,
-read over a 127-byte range request each on 2026-11-15.
+read over a 127-byte range request each on 2026-11-15. Within an area the two
+bands are pixel-aligned and share a maximum zoom, so a client can swap one for
+the other without recomputing a tile address.
 
 ## Coverage footprints
 
 The footprints below are different sizes, and code that confuses them draws in
 the wrong place.
 
-| Archive | PMTiles header says | Tiles present | GEM-15 cells with elevation |
+Both bands of an area share a footprint, so each row below covers two
+archives.
+
+| Area | PMTiles header says | Tiles present | GEM-15 cells with elevation |
 |---|---|---|---|
 | Catalonia | the whole world | 0 to 5.625E, 36.598 to 45.089N | `w1s41` `w2s41` `w3s40` `w3s41` |
 | Cusco | the whole world | 73.125W to 70.3125W, 16.636S to 11.178S | `wm73sm14` |
@@ -143,8 +157,25 @@ Expect `tile type: WebP`, `tile compression: none`, `min zoom: 0` and
   the archive's own attribution and stops there is under-crediting the data.
   Set the full attribution on the source, which MapLibre prefers over the
   archive metadata, or use one of the styles in `styles/`.
-- **The archives are a surface model.** GEM-15's DSM includes canopy and
-  buildings. The fork wires up no DTM.
+- **The gap between the two bands is not a canopy or building height on
+  steep ground.** The DTM reads at or below the DSM at every point measured,
+  and the amount is usable on flat ground alone. Each archive is mosaicked and
+  resampled on its own, so at a zoom 13 pixel of about
+  9.55 m the difference in where the two rasters land inside the pixel can
+  exceed the real gap. Measured 2026-11-15 on bare rock, where the true gap
+  is near zero either way: 0.75 m at the Toubkal summit against 8.25 m on the
+  slope below it. Over the Barcelona Eixample, which is flat, the gap of
+  5.00 m is a credible city-block height. The `gem-15` collection records the
+  same caveat at source, where the clamp that keeps the DTM at or below the
+  DSM holds at full resolution only.
+- **Over a filled void the two bands are identical by construction.** The
+  Sau reservoir reads 403.50 m in both. Copernicus GLO-30 supplies the fill,
+  it is a surface model, and no bare-earth correction is applied to it. A
+  zero gap there says nothing about what stands on the ground.
+- **The bare-earth band is model output.** GEM-15 predicts its DTM from the
+  DSM with a model trained on US airborne lidar, so it is the more
+  experimental of the two. Under closed canopy its bias reaches +9.4 m, which
+  covers the Cusco archive.
 - **These are not a mirror of GEM-15 pixels.** The tiles are resampled,
   void-filled and re-encoded to 8 bits per channel. Treat them as a rendering
   input.
@@ -157,7 +188,11 @@ Expect `tile type: WebP`, `tile compression: none`, `min zoom: 0` and
   attribution. They use the same absolute elevation ramp as the `gem-15`
   collection's hypsometric style, so a colour means the same height across
   this catalog. Minimum client is MapLibre GL JS 5.6.0, where the
-  `color-relief` layer type arrived.
+  `color-relief` layer type arrived. Each one draws the area's surface model.
+  To draw the bare-earth band, change the one `url` line to the `-dtm`
+  sibling and change nothing else. The collection has no separate DTM style
+  on purpose, because the ramp, the hillshade, the tile size and the maximum
+  zoom are identical across the two bands.
 - **Thumbnail.** `thumbnail.png` is the High Atlas archive decoded at zoom 10
   and shaded with that same ramp, so the catalog card and the default style
   agree. `tools/build_mapterhorn_thumbnail.py` in the catalog repository

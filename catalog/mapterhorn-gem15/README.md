@@ -28,17 +28,27 @@ draws the three archives in the browser.
 
 ## The archives
 
-Built 2026-11-15 on a cluster, 28 m 07 s of wall clock for all of them.
+Each of the three areas has the GEM-15 surface model (DSM) and its
+bare-earth model (DTM), which makes six archives. Built 2026-11-15 on a cluster, 28 m 07 s of wall clock
+for the surface set and 33 m 38 s for the bare-earth set.
 
-| Area | GEM-15 cells | Source CRS | Max zoom | Tiles | Size | Build |
+| Area | Band | GEM-15 cells | Source CRS | Max zoom | Tiles | Size |
 |---|---|---|---|---|---|---|
-| Catalonia | 4: `w1s41` `w2s41` `w3s40` `w3s41` | EPSG:32631 | 12 | 10,931 | 42.1 MB | 9 m 13 s |
-| Cusco, Peru | 1: `wm73sm14` | EPSG:32718 | 13 | 10,929 | 129.4 MB | 8 m 36 s |
-| High Atlas, Morocco | 1: `wm8s31` | EPSG:32629 | 13 | 10,931 | 114.6 MB | 10 m 18 s |
+| Catalonia | DSM | 4: `w1s41` `w2s41` `w3s40` `w3s41` | EPSG:32631 | 12 | 10,931 | 42.1 MB |
+| Catalonia | DTM | the same 4 cells | EPSG:32631 | 12 | 10,931 | 37.9 MB |
+| Cusco, Peru | DSM | 1: `wm73sm14` | EPSG:32718 | 13 | 10,929 | 129.4 MB |
+| Cusco, Peru | DTM | the same cell | EPSG:32718 | 13 | 10,929 | 129.2 MB |
+| High Atlas, Morocco | DSM | 1: `wm8s31` | EPSG:32629 | 13 | 10,931 | 114.6 MB |
+| High Atlas, Morocco | DTM | the same cell | EPSG:32629 | 13 | 10,931 | 112.3 MB |
 
-The archives use Mapzen terrarium encoding in 512 px lossless WebP tiles,
-PMTiles specification v3, clustered, from zoom 0 to the maximum above. They
-are separate files with no overlap, so a map picks one.
+Per-area build times for the surface set were 9 m 13 s, 8 m 36 s and
+10 m 18 s. The archives use Mapzen terrarium encoding in 512 px lossless WebP
+tiles, PMTiles specification v3, clustered, from zoom 0 to the maximum above.
+They are separate files with no overlap, so a map picks one.
+
+Within an area the bands are pixel-aligned, so a client can swap between them
+without moving the map. The maximum zoom follows the source resolution, which
+makes it the same for both bands.
 
 The tile counts barely differ because the pipeline writes a WebP for each tile
 in an aggregation block, including the flat 0 m tiles outside the source
@@ -119,6 +129,47 @@ ground at that latitude, and a pyramidal summit occupies less than that, so
 the pixel samples the upper slope instead of the pinnacle. The 58 m shortfall
 against the true height measures tile sampling, not the accuracy of GEM-15.
 
+## Surface against bare earth
+
+The DTM band is here because Mapterhorn's production sources are national
+bare-earth models and its purpose is cartographic terrain. That makes the DTM
+the closer analog to what the pipeline normally consumes, and the fairer
+answer to the question the issue asked. The DSM stays the like-for-like
+comparison against Copernicus GLO-30, which is itself a surface model.
+
+Both bands of a point, decoded from the published archives on 2026-11-15:
+
+| Point | DSM | DTM | Gap | What stands there |
+|---|---|---|---|---|
+| Sau reservoir, 2.400E 41.970N | 403.50 m | 403.50 m | **0.00 m** | Water, and a filled void in both bands |
+| Montserrat, 1.838E 41.593N | 702.00 m | 701.50 m | −0.50 m | Bare rock |
+| Toubkal summit, 7.9147W 31.0606N | 4108.50 m | 4107.75 m | −0.75 m | Bare rock |
+| Barcelona Eixample, 2.1627E 41.3917N | 40.00 m | 35.00 m | −5.00 m | City blocks |
+| Cusco, 72.54W 13.16S | 1973.75 m | 1968.50 m | −5.25 m | Cloud forest |
+| Toubkal, 7.92W 31.06N | 3853.75 m | 3845.50 m | −8.25 m | Steep slope below the summit |
+
+The Sau row is the one to read first. Both bands report the same 403.50 m,
+because that pixel is a filled void rather than a measurement. The fill comes
+from Copernicus GLO-30, a surface model with no bare-earth correction, so the
+two bands take the same surface there. A filled pixel tells you nothing about
+canopy or buildings.
+
+**Do not read the gap as a canopy or building height on steep ground.** It
+works on flat ground, where the Eixample row recovers a plausible 5 m of city
+block, and it breaks down on a ridge. The DSM and the DTM are mosaicked and resampled
+into tiles independently, and at a zoom 13 pixel of about 9.55 m the
+difference in where the two rasters land inside that pixel can exceed the real
+gap. The Toubkal rows show the size of the effect: 8.25 m on the slope against
+0.75 m at the summit, on ground that is bare rock in both places. The
+[`gem-15`](../gem-15/AGENTS.md) collection records the same caveat at source,
+where the clamp that keeps the DTM at or below the DSM holds at full
+resolution only.
+
+The DTM is also the more experimental of the two bands. GEM-15 predicts it
+from the DSM with a model trained on airborne lidar, rather than measuring it,
+and under closed canopy its bias reaches +9.4 m. The Cusco row is in cloud
+forest, so its 5.25 m gap takes that uncertainty on top of the sampling one.
+
 ## Using the tiles in MapLibre
 
 Each archive is a `raster-dem` source. Set `tileSize` to 512, because
@@ -175,6 +226,12 @@ for its archive, and the full attribution. They use the same elevation ramp as
 the `gem-15` collection's hypsometric style, so a colour means the same height
 across this catalog.
 
+Each style draws the area's surface model. To draw the bare-earth model
+instead, change the one `url` line to the `-dtm` sibling and change nothing
+else. The collection has no separate DTM style, deliberately: the ramp, the
+hillshade, the tile size and the maximum zoom are identical across the two
+bands, so a second copy would only be another place to forget a ramp change.
+
 ## Known issues
 
 - **The PMTiles header bounds are wrong.** Each archive declares the whole
@@ -185,7 +242,9 @@ across this catalog.
   one-degree cells inside them. A client that reads the header bounds to
   decide where to draw will draw everywhere.
 
-  | Archive | Tiles present | Cells with elevation |
+  Both bands of an area share a footprint, so each row covers two archives.
+
+  | Area | Tiles present | Cells with elevation |
   |---|---|---|
   | Catalonia | 0 to 5.625E, 36.598 to 45.089N | `[1,41,2,42]` `[2,41,3,42]` `[3,40,4,41]` `[3,41,4,42]` |
   | Cusco | 73.125W to 70.3125W, 16.636S to 11.178S | `[-73,-14,-72,-13]` |
@@ -205,9 +264,15 @@ across this catalog.
   [`gem-15`](../gem-15/collection.json) item COGs.
 - **Terrarium has no nodata value**, so each tile outside the source cells
   decodes as 0 m and renders as a flat plain at sea level.
-- **Surface model only.** The fork wires up the GEM-15 DSM alone. The DTM
-  needs no band extraction and the same void mask applies, so it would be a
-  small addition, and nobody has run it.
+- **The bare-earth band is model output, not measurement.** GEM-15 predicts
+  its DTM from the DSM with a model trained on US airborne lidar, and under
+  closed canopy its bias reaches +9.4 m. Prefer
+  [FABDEM](https://doi.org/10.1088/1748-9326/ac4d4f) where closed-canopy bare
+  earth is the product you need.
+- **The DSM-minus-DTM gap is unreliable on steep ground.** See "Surface
+  against bare earth" above. Over a filled void the gap is zero by
+  construction, because Copernicus GLO-30 supplies the same surface to both
+  bands.
 - **The fork is not ready for upstream.** Its source-catalog entries have a
   `LICENSE.md` where the Mapterhorn source catalog specifies a `LICENSE.pdf`,
   and a global ingest would need roughly 60 sources, one per UTM zone, and
@@ -259,10 +324,13 @@ https://eartharxiv.org/repository/view/16034/, doi:10.31223/X55N75
 | File | What it is |
 |---|---|
 | `collection.json` | This collection, with the archives as assets |
-| `mapterhorn-gem15-barcelona.pmtiles` | Catalonia, zoom 0 to 12, 42.1 MB |
-| `mapterhorn-gem15-cusco.pmtiles` | Cusco, zoom 0 to 13, 129.4 MB |
-| `mapterhorn-gem15-atlas.pmtiles` | High Atlas, zoom 0 to 13, 114.6 MB |
-| `styles/*.json` | One MapLibre GL style per archive |
+| `mapterhorn-gem15-barcelona.pmtiles` | Catalonia surface model, zoom 0 to 12, 42.1 MB |
+| `mapterhorn-gem15-barcelona-dtm.pmtiles` | Catalonia bare earth, zoom 0 to 12, 37.9 MB |
+| `mapterhorn-gem15-cusco.pmtiles` | Cusco surface model, zoom 0 to 13, 129.4 MB |
+| `mapterhorn-gem15-cusco-dtm.pmtiles` | Cusco bare earth, zoom 0 to 13, 129.2 MB |
+| `mapterhorn-gem15-atlas.pmtiles` | High Atlas surface model, zoom 0 to 13, 114.6 MB |
+| `mapterhorn-gem15-atlas-dtm.pmtiles` | High Atlas bare earth, zoom 0 to 13, 112.3 MB |
+| `styles/*.json` | One MapLibre GL style per area, on the surface model |
 | `thumbnail.png` | The High Atlas, decoded from its own archive |
 | `AGENTS.md`, `llms.txt` | Guidance for agents and language models |
 

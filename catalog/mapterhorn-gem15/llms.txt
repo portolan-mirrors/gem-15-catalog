@@ -1,7 +1,8 @@
 # Mapterhorn pipeline over GEM-15: three test areas
 
-> An experiment, not a Mapterhorn release. Three terrarium-encoded terrain
-> PMTiles archives, built by running GEM-15 elevation COGs through the
+> An experiment, not a Mapterhorn release. Six terrarium-encoded terrain
+> PMTiles archives, a surface and a bare-earth model over each of three
+> areas, built by running GEM-15 elevation COGs through the
 > Mapterhorn terrain pipeline from an unmerged fork
 > (github.com/cholmes/mapterhorn, branch gem-15-source, built at commit
 > 86d8494, forked from upstream main at 2c4195d). The Mapterhorn project
@@ -10,7 +11,20 @@
 Key facts
 
 - Three areas: Catalonia (4 GEM-15 cells, max zoom 12), Cusco (1 cell, 13),
-  High Atlas (1 cell, 13). Built in 28 m 07 s total.
+  High Atlas (1 cell, 13). Each area has a surface model (DSM) and a
+  bare-earth model (DTM), pixel-aligned, same max zoom and tile count.
+  The DSM set built in 28 m 07 s, the DTM set in 33 m 38 s.
+- An unsuffixed archive name is the DSM. The DTM name ends in `-dtm`.
+- The DTM is the closer analog to mapterhorn's own production sources, which
+  are national bare-earth models. The DSM is the like-for-like comparison
+  against GLO-30, itself a surface model.
+- GEM-15 predicts its DTM from its DSM with a model, so the DTM is the more
+  experimental band, and it is weak under closed canopy (bias to +9.4 m).
+- DTM minus DSM is a usable height above ground on flat terrain only. At a
+  zoom 13 pixel of ~9.55 m the two independently resampled rasters can differ
+  on a ridge by more than the real gap. Measured on bare rock: 0.75 m at the
+  Toubkal summit against 8.25 m on the slope below it. Over a filled void the
+  gap is exactly 0, because GLO-30 supplies the same surface to both bands.
 - Encoding: Mapzen terrarium, 512 px lossless WebP, PMTiles spec v3,
   clustered, minimum zoom 0. Decode with
   elevation = (R * 256 + G + B / 256) − 32768.
@@ -33,9 +47,11 @@ Key facts
   below about 38.3 degrees of latitude. Catalonia therefore lands at zoom 12,
   the same depth GLO-30 gets there. Zoom 14 depth is unreachable for a 15 m
   source at any latitude under that rule.
-- Probes decoded from the published archives, 2026-11-15: Sau reservoir
+- DSM probes decoded from the published archives, 2026-11-15: Sau reservoir
   403.50 m (NaN in GEM-15, so the void fill ran), Montserrat 702.00 m,
   Cusco 1973.75 m, Toubkal summit 4108.50 m.
+- DTM at the same points: 403.50, 701.50, 1968.50, 4107.75 m. Barcelona
+  Eixample (2.1627E 41.3917N) reads 40.00 m DSM against 35.00 m DTM.
 - Each archive's own PMTiles metadata declares only
   `attribution: "© Mapterhorn"`. Set the full attribution yourself.
 - Licences: CC-BY-4.0 with "This dataset is produced by Google"; the
@@ -45,9 +61,12 @@ Key facts
 Key URLs
 
 - Collection: https://data.source.coop/portolan-mirrors/gem-15-catalog/mapterhorn-gem15/collection.json
-- Catalonia: https://data.source.coop/portolan-mirrors/gem-15-catalog/mapterhorn-gem15/mapterhorn-gem15-barcelona.pmtiles
-- Cusco: https://data.source.coop/portolan-mirrors/gem-15-catalog/mapterhorn-gem15/mapterhorn-gem15-cusco.pmtiles
-- High Atlas: https://data.source.coop/portolan-mirrors/gem-15-catalog/mapterhorn-gem15/mapterhorn-gem15-atlas.pmtiles
+- Catalonia DSM: https://data.source.coop/portolan-mirrors/gem-15-catalog/mapterhorn-gem15/mapterhorn-gem15-barcelona.pmtiles
+- Catalonia DTM: https://data.source.coop/portolan-mirrors/gem-15-catalog/mapterhorn-gem15/mapterhorn-gem15-barcelona-dtm.pmtiles
+- Cusco DSM: https://data.source.coop/portolan-mirrors/gem-15-catalog/mapterhorn-gem15/mapterhorn-gem15-cusco.pmtiles
+- Cusco DTM: https://data.source.coop/portolan-mirrors/gem-15-catalog/mapterhorn-gem15/mapterhorn-gem15-cusco-dtm.pmtiles
+- High Atlas DSM: https://data.source.coop/portolan-mirrors/gem-15-catalog/mapterhorn-gem15/mapterhorn-gem15-atlas.pmtiles
+- High Atlas DTM: https://data.source.coop/portolan-mirrors/gem-15-catalog/mapterhorn-gem15/mapterhorn-gem15-atlas-dtm.pmtiles
 - Elevation source collection: https://data.source.coop/portolan-mirrors/gem-15-catalog/gem-15/collection.json
 - Live comparison: https://portolan-mirrors.github.io/gem-15-catalog/maplibre-terrain/mapterhorn-gem15.html
 - The fork and its notes: https://github.com/cholmes/mapterhorn/blob/gem-15-source/NOTES.md
@@ -61,5 +80,6 @@ Documentation
   code against the archives.
 - [README.md](README.md): the experiment, the per-area table, the maxzoom
   result, the probe readings, a MapLibre snippet, and the attribution stack.
-- [collection.json](collection.json): STAC 1.1 metadata, three archive
-  assets with file sizes and checksums, three styles, and a thumbnail.
+- [collection.json](collection.json): STAC 1.1 metadata, six archive assets
+  with file sizes and checksums, three styles on the DSM, and a thumbnail.
+  A style renders the DTM after one url change.

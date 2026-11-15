@@ -11,7 +11,7 @@ page.
 | Collection | Items | Grid | Coverage | What it is |
 |---|---|---|---|---|
 | [`gem-15`](gem-15/README.md) | 13,485 one-degree cells | 15 m | 84°N–61°S | A 5-band Digital Surface Model and a co-registered 1-band bare-earth Digital Terrain Model, from sub-meter optical stereo imagery |
-| [`mapterhorn-gem15`](mapterhorn-gem15/README.md) | none | 512 px terrarium tiles | 3 test areas | An experiment: GEM-15 run through the Mapterhorn terrain pipeline on an unmerged fork, as three small PMTiles archives over Catalonia, Cusco and the High Atlas |
+| [`mapterhorn-gem15`](mapterhorn-gem15/README.md) | none | 512 px terrarium tiles | 3 test areas | An experiment: GEM-15 run through the Mapterhorn terrain pipeline on an unmerged fork, as six small PMTiles archives over Catalonia, Cusco and the High Atlas, a surface and a bare-earth model for each |
 
 The second collection is a measurement rather than a product. It answers
 [mapterhorn#368](https://github.com/mapterhorn/mapterhorn/issues/368) and is
