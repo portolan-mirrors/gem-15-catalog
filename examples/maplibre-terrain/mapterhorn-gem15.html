@@ -524,9 +524,11 @@ const AREAS = [
     center: [2.1650, 41.3900],
     zoom: 13,
     left: {
-      model: 'lidar',
+      model: 'lidar DTM',
       blurb: 'planet.pmtiles for z0–12, then the regional shard 6-32-23 for ' +
-        'z13–16. Spanish lidar underneath, at a resolution GEM-15 cannot match.',
+        'z13–16. Spanish lidar underneath, at a resolution GEM-15 cannot ' +
+        'match — but it is a bare-earth terrain model: buildings and ' +
+        'vegetation are removed, so a flat city reads smooth here.',
     },
     right: {
       model: 'DSM',
@@ -534,12 +536,17 @@ const AREAS = [
         'there. 42.1 MB, lon 0 to 5.625, lat 36.598 to 45.089.',
     },
     explainer:
-      '<b>Barcelona: GEM-15 loses, and that is the useful result.</b> ' +
-      'Mapterhorn production here is Spanish lidar at z16. GEM-15 enters at ' +
-      'z12 under Mapterhorn\'s maxzoom rule, because 15 m at 41N does not ' +
-      'clear their z13 threshold. GEM-15 does not compete where national ' +
-      'lidar exists. Our archives also carry the water-void fill from ' +
-      'Copernicus GLO-30, which is what the Sau reservoir preset shows.',
+      '<b>Barcelona: GEM-15 loses on terrain, and that is the useful ' +
+      'result.</b> Mapterhorn production here is Spanish lidar at z16. ' +
+      'GEM-15 enters at z12 under Mapterhorn\'s maxzoom rule, because 15 m ' +
+      'at 41N does not clear their z13 threshold. GEM-15 does not compete ' +
+      'where national lidar exists. The two panes also model different ' +
+      'things: the lidar is bare earth (DTM), so city blocks vanish; ' +
+      'GEM-15 is a surface model (DSM), so buildings and canopy appear as ' +
+      'bumps. Over the city that difference dominates — compare terrain ' +
+      'detail at Montserrat instead. Our archives also carry the ' +
+      'water-void fill from Copernicus GLO-30, which is what the Sau ' +
+      'reservoir preset shows.',
     places: [
       {
         label: 'Sau reservoir',
