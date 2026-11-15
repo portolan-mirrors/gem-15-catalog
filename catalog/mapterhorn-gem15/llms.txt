@@ -20,11 +20,14 @@ Key facts
   against GLO-30, itself a surface model.
 - GEM-15 predicts its DTM from its DSM with a model, so the DTM is the more
   experimental band, and it is weak under closed canopy (bias to +9.4 m).
-- DTM minus DSM is a usable height above ground on flat terrain only. At a
-  zoom 13 pixel of ~9.55 m the two independently resampled rasters can differ
-  on a ridge by more than the real gap. Measured on bare rock: 0.75 m at the
-  Toubkal summit against 8.25 m on the slope below it. Over a filled void the
-  gap is exactly 0, because GLO-30 supplies the same surface to both bands.
+- DTM minus DSM is a usable height above ground on flat terrain only. The two
+  independently resampled rasters can differ on a ridge by more than the real
+  gap. A zoom 13 pixel is 9.55 m at the equator, 9.30 m at Cusco and 8.18 m in
+  the Atlas. Measured on bare rock: 0.75 m at the Toubkal summit, 10.25 m at
+  7.91W 31.06N about 150 m away. Worst case is the Machu Picchu ridge: 92.25 m
+  at the demo preset, 0 to 265 m across a 25-point grid. No canopy is 265 m
+  tall. Over a filled void the gap is exactly 0, because GLO-30 supplies the
+  same surface to both bands.
 - Encoding: Mapzen terrarium, 512 px lossless WebP, PMTiles spec v3,
   clustered, minimum zoom 0. Decode with
   elevation = (R * 256 + G + B / 256) − 32768.

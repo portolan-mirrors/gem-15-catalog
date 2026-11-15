@@ -303,9 +303,11 @@ analog to what the pipeline normally consumes. The DSM stays the like-for-like
 comparison against Copernicus GLO-30, which is itself a surface model. The
 documentation scopes the difference carefully: the DTM reads at or below the
 DSM at every probe point, and the gap is a usable height above ground on flat
-terrain alone. Each archive is resampled on its own, so on a ridge at a zoom
-13 pixel of about 9.55 m the sub-pixel landing difference can exceed the real
-gap. Over a filled void the gap is zero by construction, because
+terrain alone. Each archive is resampled on its own, so on a ridge the
+sub-pixel landing difference can exceed the real gap. A zoom 13 pixel is
+9.55 m at the equator, 9.30 m at Cusco's latitude and 8.18 m in the High
+Atlas. The Machu Picchu ridge is the extreme: 92.25 m at the demo page's
+preset, and 0 to 265 m across a 25-point grid, which no canopy explains. Over a filled void the gap is zero by construction, because
 GLO-30 supplies the same surface to both bands. The DTM is also the more
 experimental band, since GEM-15 predicts it from the DSM with a model.
 

@@ -29,8 +29,9 @@ draws the three archives in the browser.
 ## The archives
 
 Each of the three areas has the GEM-15 surface model (DSM) and its
-bare-earth model (DTM), which makes six archives. Built 2026-11-15 on a cluster, 28 m 07 s of wall clock
-for the surface set and 33 m 38 s for the bare-earth set.
+bare-earth model (DTM), which makes six archives. Built 2026-11-15 on a
+cluster, 28 m 07 s of wall clock for the surface set and 33 m 38 s for the
+bare-earth set.
 
 | Area | Band | GEM-15 cells | Source CRS | Max zoom | Tiles | Size |
 |---|---|---|---|---|---|---|
@@ -137,7 +138,8 @@ the closer analog to what the pipeline normally consumes, and the fairer
 answer to the question the issue asked. The DSM stays the like-for-like
 comparison against Copernicus GLO-30, which is itself a surface model.
 
-Both bands of a point, decoded from the published archives on 2026-11-15:
+Both bands at the cluster probe points, decoded from the published archives
+on 2026-11-15:
 
 | Point | DSM | DTM | Gap | What stands there |
 |---|---|---|---|---|
@@ -148,19 +150,52 @@ Both bands of a point, decoded from the published archives on 2026-11-15:
 | Cusco, 72.54W 13.16S | 1973.75 m | 1968.50 m | −5.25 m | Cloud forest |
 | Toubkal, 7.92W 31.06N | 3853.75 m | 3845.50 m | −8.25 m | Steep slope below the summit |
 
+The [demo page](https://portolan-mirrors.github.io/gem-15-catalog/maplibre-terrain/mapterhorn-gem15.html)
+measures both bands at its nine viewpoints, using its own preset coordinates.
+Those differ from the probe points above, so one place name can appear in both
+lists with a different gap. Where the two sets share a point they agree
+exactly: Sau, Montserrat, the Eixample and the Toubkal summit.
+
+| Demo preset | Gap |
+|---|---|
+| Sau reservoir | 0.00 m |
+| Cusco valley | 0.00 m |
+| Oukaimeden | 0.00 m |
+| Montserrat | −0.50 m |
+| Toubkal summit | −0.75 m |
+| Imlil | −3.00 m |
+| Ollantaytambo | −3.75 m |
+| Barcelona Eixample | −5.00 m |
+| **Machu Picchu** | **−92.25 m** |
+
 The Sau row is the one to read first. Both bands report the same 403.50 m,
 because that pixel is a filled void rather than a measurement. The fill comes
 from Copernicus GLO-30, a surface model with no bare-earth correction, so the
 two bands take the same surface there. A filled pixel tells you nothing about
-canopy or buildings.
+canopy or buildings, and the same explanation covers the two other zeroes in
+the preset table.
 
-**Do not read the gap as a canopy or building height on steep ground.** It
-works on flat ground, where the Eixample row recovers a plausible 5 m of city
-block, and it breaks down on a ridge. The DSM and the DTM are mosaicked and resampled
-into tiles independently, and at a zoom 13 pixel of about 9.55 m the
-difference in where the two rasters land inside that pixel can exceed the real
-gap. The Toubkal rows show the size of the effect: 8.25 m on the slope against
-0.75 m at the summit, on ground that is bare rock in both places. The
+**Machu Picchu is the warning case, and it is the first preset most readers
+will open.** A 92.25 m gap is no canopy height, since the tallest trees on
+Earth stop below 120 m. A 25-point grid at 0.002 degree steps across that
+ridge, read from the archives on 2026-11-15, gave gaps from 0.00 m to
+**−265.00 m**, so the preset figure is ordinary for that ground rather than
+one bad pixel.
+The data cannot separate the two mechanisms behind it. GEM-15 predicts its
+bare-earth band with a model, which can over-remove on a forested ridge. The
+site is also a knife ridge with near-vertical faces, where a horizontal offset
+of one pixel between two independently resampled rasters becomes the slope
+times that offset, which runs to tens or hundreds of metres on a cliff.
+
+**The sampling effect is measurable on bare rock, with no canopy in play.** At
+7.91W 31.06N, about 150 m from the Toubkal summit, the gap is −10.25 m on an
+8.18 m pixel. At the summit itself it is −0.75 m. A shift of roughly one pixel
+moves the gap by roughly one pixel's worth of elevation. A zoom 13 pixel is
+9.55 m at the equator, 9.30 m at Cusco's latitude and 8.18 m in the High
+Atlas, because a Web Mercator pixel shrinks with the cosine of latitude.
+
+So the gap is a usable height above ground on flat terrain, where the Eixample
+row recovers a plausible 5 m of city block, and it breaks down on slopes. The
 [`gem-15`](../gem-15/AGENTS.md) collection records the same caveat at source,
 where the clamp that keeps the DTM at or below the DSM holds at full
 resolution only.

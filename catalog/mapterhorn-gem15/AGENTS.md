@@ -159,15 +159,23 @@ Expect `tile type: WebP`, `tile compression: none`, `min zoom: 0` and
   archive metadata, or use one of the styles in `styles/`.
 - **The gap between the two bands is not a canopy or building height on
   steep ground.** The DTM reads at or below the DSM at every point measured,
-  and the amount is usable on flat ground alone. Each archive is mosaicked and
-  resampled on its own, so at a zoom 13 pixel of about
-  9.55 m the difference in where the two rasters land inside the pixel can
-  exceed the real gap. Measured 2026-11-15 on bare rock, where the true gap
-  is near zero either way: 0.75 m at the Toubkal summit against 8.25 m on the
-  slope below it. Over the Barcelona Eixample, which is flat, the gap of
-  5.00 m is a credible city-block height. The `gem-15` collection records the
-  same caveat at source, where the clamp that keeps the DTM at or below the
-  DSM holds at full resolution only.
+  and the amount is usable on flat ground alone. Each archive is mosaicked
+  and resampled on its own, so the difference in where the two rasters land
+  inside one pixel can exceed the real gap. A zoom 13 pixel is 9.55 m at the
+  equator, 9.30 m at Cusco's latitude and 8.18 m in the High Atlas.
+  Measured 2026-11-15 on bare rock, where the true gap is near zero either
+  way: 0.75 m at the Toubkal summit, 10.25 m at 7.91W 31.06N about 150 m
+  away, and 8.25 m on the slope at 7.92W 31.06N. Moving about one pixel
+  moves the gap by about one pixel's worth of elevation.
+  **The extreme case is Machu Picchu**, where the demo page's preset reads a
+  92.25 m gap and a 25-point grid at 0.002 degree steps over that ridge gave
+  0.00 m to 265.00 m (measured 2026-11-15). No canopy is 265 m tall. On a
+  near-vertical face a one-pixel horizontal offset becomes the slope times
+  that offset, and the model may also over-remove on a forested ridge; these
+  archives cannot separate the two. Over the Barcelona Eixample, which is
+  flat, the gap of 5.00 m is a credible city-block height. The `gem-15`
+  collection records the same caveat at source, where the clamp that keeps
+  the DTM at or below the DSM holds at full resolution only.
 - **Over a filled void the two bands are identical by construction.** The
   Sau reservoir reads 403.50 m in both. Copernicus GLO-30 supplies the fill,
   it is a surface model, and no bare-earth correction is applied to it. A
