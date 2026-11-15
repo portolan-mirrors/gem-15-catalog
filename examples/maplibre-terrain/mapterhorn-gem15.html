@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>Mapterhorn today beside a GEM-15 build, three areas</title>
+<title>Mapterhorn today beside both GEM-15 bands, three areas</title>
 
 <!--
   WHAT THIS PAGE IS FOR.
@@ -20,35 +20,88 @@
     Cusco          No shard. Mapterhorn is planet-only, so z12 is the floor.
     High Atlas     No shard over Toubkal. Planet-only again.
 
-  So the left pane changes character between areas and the right pane does
-  not. That asymmetry is the whole comparison: GEM-15 at 15 m is a large gain
+  So the left pane changes character between areas and the GEM-15 panes do
+  not. That asymmetry is half the comparison: GEM-15 at 15 m is a large gain
   where nothing better than Copernicus GLO-30 exists, and no gain at all where
   a national lidar survey already does.
+
+  THREE PANES, BECAUSE GEM-15 SHIPS TWO BANDS.
+
+    left    Mapterhorn today. Spanish lidar over Barcelona, which is a
+            bare-earth terrain model, and Copernicus GLO-30 elsewhere.
+    middle  GEM-15 DTM, the bare-earth band.
+    right   GEM-15 DSM, the surface band, with buildings and canopy in it.
+
+  The middle pane is what makes the Barcelona comparison fair. Mapterhorn
+  serves a DTM there, so a DSM beside it differs by two things at once:
+  resolution and the model. The GEM-15 DTM beside the lidar DTM is the matched
+  bare-earth test, and the DSM pane then shows what the surface band adds on
+  top of it.
+
+  THE GEM-15 DTM IS DERIVED FROM ITS DSM BY A MACHINE-LEARNING MODEL. It is
+  not an independent measurement of the ground, and the paper is the source
+  for that. So a DSM-minus-DTM difference is the output of that model, not a
+  measured object height.
+
+  THE TWO BANDS, AS MEASURED AT THE PRESET POINTS of this page on 2026-11-15,
+  as DTM minus DSM at the deepest zoom each archive has:
+
+    Sau reservoir     2.4000E  41.9700N    0.00 m   both bands take the
+                                                    GLO-30 water-void fill
+    Montserrat        1.8380E  41.5930N   -0.50 m   bare rock
+    Eixample          2.1627E  41.3917N   -5.00 m   buildings removed
+    Ollantaytambo    72.2650W  13.2575S   -3.75 m   valley floor and terraces
+    Cusco valley     71.9780W  13.5190S    0.00 m   open ground
+    Toubkal summit    7.9147W  31.0606N   -0.75 m   bare rock
+    Imlil valley      7.9190W  31.1360N   -3.00 m
+    Oukaimeden        7.8610W  31.1930N    0.00 m
+    Machu Picchu     72.5450W  13.1630S  -92.25 m   SEE THE CAVEAT
+
+  DTM is at or below DSM at every one of those points, which is the only
+  thing the pair of bands guarantees. THE SIZE OF THE GAP IS NOT A PROXY FOR
+  CANOPY OR BUILDING HEIGHT, and Machu Picchu is the proof. No canopy on that
+  citadel ridge is 92 m tall. The two bands are mosaicked independently, the
+  pixel is 9.30 m there, and on a ridge that falls hundreds of metres across a
+  few pixels a sub-pixel difference in where each band lands moves the number
+  by tens of metres. Toubkal shows the same effect at a readable scale: -0.75 m
+  at the summit and -10.25 m about 150 m away, at 7.91W 31.06N, on an 8.18 m
+  pixel. The flat points are the trustworthy ones, and the page says so.
 
   THESE ARCHIVES ARE AN EXPERIMENT, NOT A MAPTERHORN RELEASE. They come from
   an unmerged fork, https://github.com/cholmes/mapterhorn tree gem-15-source,
   and the upstream discussion is mapterhorn/mapterhorn issue 368. Nothing here
   is published by the Mapterhorn project.
 
-  THE THREE GEM-15 ARCHIVES, measured against the live files on 2026-11-15.
+  THE SIX GEM-15 ARCHIVES, measured against the live files on 2026-11-15.
   Each PMTiles v3 header was read over a range request, and the root directory
   was decoded to get the real tile footprint. The header bounds say the whole
-  world in all three files, which is wrong about coverage, so the footprints
+  world in all six files, which is wrong about coverage, so the footprints
   below come from the directory rather than from the header.
 
-    mapterhorn-gem15-barcelona.pmtiles  webp, uncompressed, z0-12, 42.1 MB
+    mapterhorn-gem15-barcelona.pmtiles      webp, z0-12, 42.1 MB
+    mapterhorn-gem15-barcelona-dtm.pmtiles  webp, z0-12, 37.9 MB
       z12 tiles x 2048-2111, y 1472-1599, so lon 0 to 5.625 and lat 36.598
       to 45.089. That is the z6 pair 32/23 and 32/24.
-    mapterhorn-gem15-cusco.pmtiles      webp, uncompressed, z0-13, 129.4 MB
+    mapterhorn-gem15-cusco.pmtiles          webp, z0-13, 129.4 MB
+    mapterhorn-gem15-cusco-dtm.pmtiles      webp, z0-13, 129.2 MB
       z13 tiles x 2432-2495, y 4352-4479, so lon -73.125 to -70.3125 and lat
       -16.636 to -11.178. All inside the single z6 tile 19/34.
-    mapterhorn-gem15-atlas.pmtiles      webp, uncompressed, z0-13, 114.6 MB
+    mapterhorn-gem15-atlas.pmtiles          webp, z0-13, 114.6 MB
+    mapterhorn-gem15-atlas-dtm.pmtiles      webp, z0-13, 112.3 MB
       z13 tiles x 3904-3967, y 3264-3391, so lon -8.4375 to -5.625 and lat
       29.535 to 34.307. That is the z6 pair 30/25 and 30/26.
 
+  THE DTM ARCHIVES ARE GEOMETRICALLY IDENTICAL TO THEIR DSM SIBLINGS, which
+  is why one set of footprints covers both. Each pair has the same minzoom,
+  the same maxzoom and the same tile count, read from the headers and the
+  directories: 10931 tiles over Barcelona, 10929 over Cusco, 10931 over the
+  Atlas. So the page keys the footprint and the maxzoom off the area and not
+  off the band.
+
   Tiles are 512 px, the Mapterhorn tile size, confirmed by decoding one tile
-  from each archive. Encoding is terrarium. Every archive answers 206 to a
-  range request and sends access-control-allow-origin: *.
+  from each archive. Encoding is terrarium, and the tiles are uncompressed.
+  Every archive answers 206 to a range request and sends
+  access-control-allow-origin: *.
 
   WHICH MAPTERHORN SHARDS EXIST, from a HEAD request on each candidate on
   2026-11-15. The z6 tile that holds a point is x >> (z - 6), y >> (z - 6).
@@ -172,7 +225,7 @@
     font-variant-numeric: tabular-nums;
   }
 
-  /* The shared ramp. Colour means the same height in both panes, which is the
+  /* The shared ramp. Colour means the same height in all three panes, which is the
      whole point of an absolute ramp rather than a per-source stretch. */
   .legend { display: flex; align-items: center; gap: 8px; }
   .legend .scale { width: 150px; }
@@ -189,9 +242,13 @@
     font-variant-numeric: tabular-nums;
   }
 
+  /* The per-area explainer, then two notes that never change: what a band
+     difference does and does not mean, and that these archives are not a
+     Mapterhorn release. Both are standing caveats, so neither one is a
+     dismissible banner. */
   .notes {
     display: grid;
-    grid-template-columns: 1fr auto;
+    grid-template-columns: 1fr auto auto;
     gap: 0 12px;
     border-top: 1px solid var(--line);
   }
@@ -203,21 +260,27 @@
     font-size: 11.5px;
   }
   #explainer b { font-weight: 600; }
-  .status {
+  .note-box {
     margin: 0;
     padding: 7px 12px 8px;
-    max-width: 24em;
-    background: #fff6e5;
+    max-width: 21em;
     border-left: 1px solid var(--line);
-    color: #5c4420;
     font-size: 11px;
+  }
+  .bands {
+    background: #f4f0f8;
+    color: #413355;
+  }
+  .status {
+    background: #fff6e5;
+    color: #5c4420;
   }
   .status a { color: #8a5a10; }
 
   /* ---------- the panes ---------- */
   .panes {
     display: grid;
-    grid-template-columns: repeat(2, 1fr);
+    grid-template-columns: repeat(3, 1fr);
     gap: 1px;
     min-height: 0;
     background: var(--line);
@@ -230,7 +293,7 @@
     left: 8px;
     right: 8px;
     z-index: 2;
-    max-width: 26em;
+    max-width: 24em;
     padding: 6px 9px;
     background: var(--panel-bg);
     border: 1px solid var(--line);
@@ -291,7 +354,7 @@
   }
   .probe-grid {
     display: grid;
-    grid-template-columns: repeat(2, 1fr);
+    grid-template-columns: repeat(3, 1fr);
     gap: 8px;
     padding: 6px 12px 0;
   }
@@ -340,12 +403,12 @@
     background: var(--chrome);
   }
 
-  /* One column below the width where two map panes stop being readable. */
-  @media (max-width: 760px) {
-    .panes { grid-template-columns: 1fr; grid-template-rows: repeat(2, 1fr); }
+  /* One column below the width where three map panes stop being readable. */
+  @media (max-width: 900px) {
+    .panes { grid-template-columns: 1fr; grid-template-rows: repeat(3, 1fr); }
     .probe-grid { grid-template-columns: 1fr; }
     .notes { grid-template-columns: 1fr; }
-    .status { max-width: none; border-left: 0; border-top: 1px solid var(--line); }
+    .note-box { max-width: none; border-left: 0; border-top: 1px solid var(--line); }
     .brand .sub { display: none; }
     .legend { display: none; }
   }
@@ -356,7 +419,7 @@
 <header>
   <div class="bar">
     <div class="brand">
-      <h1>Mapterhorn today, and a GEM-15 build</h1>
+      <h1>Mapterhorn today, and GEM-15 in two bands</h1>
       <span class="sub">
         <a href="https://source.coop/mapterhorn/mapterhorn" target="_blank" rel="noopener">Mapterhorn</a> ·
         <a href="https://source.coop/portolan-mirrors/gem-15-catalog" target="_blank" rel="noopener">GEM-15</a>
@@ -388,7 +451,7 @@
     <div class="group">
       <span class="group-label">View</span>
       <button type="button" id="tilt" aria-pressed="false"
-              title="Tilt both panes to a pitch of 60. Right-drag or ctrl-drag tilts and rotates them by hand.">3D</button>
+              title="Tilt all three panes to a pitch of 60. Right-drag or ctrl-drag tilts and rotates them by hand.">3D</button>
     </div>
 
     <div class="group">
@@ -412,9 +475,20 @@
 
   <div class="notes">
     <p id="explainer"></p>
-    <p class="status">
-      <b>Experimental.</b> The right pane reads archives built on an unmerged
-      fork,
+    <p class="note-box bands">
+      <b>What a band difference means.</b> The GEM-15 DTM is derived from its
+      DSM by a machine-learning model, not measured separately, so the gap
+      between the two panes is that model's output rather than an object
+      height. DTM sits at or below DSM at every preset here. <b>The size of
+      the gap is not a proxy for canopy or building height on steep
+      ground.</b> The bands are mosaicked independently, and on a ridge that
+      drops hundreds of metres across a few 9 m pixels a sub-pixel difference
+      in where each band lands moves the number by tens of metres. Machu
+      Picchu reads 92.25 m for that reason. Trust the flat points.
+    </p>
+    <p class="note-box status">
+      <b>Experimental.</b> The two GEM-15 panes read archives built on an
+      unmerged fork,
       <a href="https://github.com/cholmes/mapterhorn/tree/gem-15-source" target="_blank" rel="noopener">cholmes/mapterhorn
       tree gem-15-source</a>, and discussed upstream in
       <a href="https://github.com/mapterhorn/mapterhorn/issues/368" target="_blank" rel="noopener">mapterhorn
@@ -426,8 +500,9 @@
 <main class="panes" id="panes"></main>
 
 <p class="hint" id="hint">
-  Click anywhere on a map to read the elevation from both sources at the best
-  zoom each one has. Press <b>3D</b>, or right-drag, to tilt the panes together.
+  Click anywhere on a map to read the elevation from all three sources at the
+  best zoom each one has. Press <b>3D</b>, or right-drag, to tilt the panes
+  together.
 </p>
 
 <section id="probe" hidden>
@@ -504,13 +579,17 @@ const GEM15_ATTRIBUTION =
 // `shardMaxzoom` is what Mapterhorn production serves here: the deepest zoom
 // of the regional shard, or null when no shard exists and planet z12 is all
 // they have.
+//
+// `archiveDtm` and `archiveDsm` are the two GEM-15 bands. They are
+// geometrically identical, so `coverage` and `gemMaxzoom` serve both.
 // ---------------------------------------------------------------------------
 
 const AREAS = [
   {
     id: 'barcelona',
     label: 'Barcelona',
-    archive: 'mapterhorn-gem15-barcelona.pmtiles',
+    archiveDtm: 'mapterhorn-gem15-barcelona-dtm.pmtiles',
+    archiveDsm: 'mapterhorn-gem15-barcelona.pmtiles',
     coverage: [0, 36.5979, 5.625, 45.0890],
     // Inside the z6 tile 32/23, which is the shard that serves z16 here. The
     // archive also covers 32/24 to the south, where a separate shard exists
@@ -530,45 +609,56 @@ const AREAS = [
         'match — but it is a bare-earth terrain model: buildings and ' +
         'vegetation are removed, so a flat city reads smooth here.',
     },
+    middle: {
+      model: 'DTM',
+      blurb: 'The matched comparison for the pane on the left: bare earth ' +
+        'against bare earth. Stops at z12, so it overzooms from there. ' +
+        '37.9 MB.',
+    },
     right: {
       model: 'DSM',
-      blurb: 'The GEM-15 build stops at z12, so this pane overzooms from ' +
-        'there. 42.1 MB, lon 0 to 5.625, lat 36.598 to 45.089.',
+      blurb: 'The surface band, with buildings and canopy in it. The middle ' +
+        'pane minus this one is what the DTM model removed. 42.1 MB.',
     },
     explainer:
       '<b>Barcelona: GEM-15 loses on terrain, and that is the useful ' +
       'result.</b> Mapterhorn production here is Spanish lidar at z16. ' +
       'GEM-15 enters at z12 under Mapterhorn\'s maxzoom rule, because 15 m ' +
       'at 41N does not clear their z13 threshold. GEM-15 does not compete ' +
-      'where national lidar exists. The two panes also model different ' +
-      'things: the lidar is bare earth (DTM), so city blocks vanish; ' +
-      'GEM-15 is a surface model (DSM), so buildings and canopy appear as ' +
-      'bumps. Over the city that difference dominates — compare terrain ' +
-      'detail at Montserrat instead. Our archives also carry the ' +
-      'water-void fill from Copernicus GLO-30, which is what the Sau ' +
-      'reservoir preset shows.',
+      'where national lidar exists. The lidar is bare earth, so the left ' +
+      'and middle panes are the matched test, and four zoom levels separate ' +
+      'them — see Montserrat. The right pane is the same GEM-15 build as a ' +
+      'surface model, so city blocks stand up in it: at the Eixample preset ' +
+      'the DTM reads 5.00 m below the DSM, which is the buildings-removed ' +
+      'signal. Our archives also carry the water-void fill from Copernicus ' +
+      'GLO-30, and both bands take it, which is why the Sau reservoir ' +
+      'preset shows a 0.00 m difference.',
     places: [
       {
         label: 'Sau reservoir',
-        hint: 'GEM-15 masks water here, and the build fills it from GLO-30.',
+        hint: 'GEM-15 masks water here, and both bands fill it from GLO-30, so '
+          + 'the DTM and the DSM agree exactly.',
         center: [2.4000, 41.9700], zoom: 13.5,
       },
       {
         label: 'Montserrat',
-        hint: 'Steep relief, where four zoom levels of difference show.',
+        hint: 'Bare rock and steep relief, where four zoom levels of '
+          + 'difference show. DTM minus DSM is 0.50 m.',
         center: [1.8380, 41.5930], zoom: 13.5,
       },
       {
-        label: 'City center',
-        hint: 'City blocks. GEM-15 is a surface model and the lidar here is not.',
-        center: [2.1650, 41.3900], zoom: 15,
+        label: 'Eixample',
+        hint: 'City blocks. DTM minus DSM is 5.00 m here, and the lidar pane '
+          + 'removes the buildings too.',
+        center: [2.1627, 41.3917], zoom: 15,
       },
     ],
   },
   {
     id: 'cusco',
     label: 'Cusco–Machu Picchu',
-    archive: 'mapterhorn-gem15-cusco.pmtiles',
+    archiveDtm: 'mapterhorn-gem15-cusco-dtm.pmtiles',
+    archiveDsm: 'mapterhorn-gem15-cusco.pmtiles',
     coverage: [-73.125, -16.6362, -70.3125, -11.1784],
     // The whole footprint sits inside the single z6 tile 19/34, and
     // 6-19-34.pmtiles answers 404. So no part of this box has a shard and the
@@ -586,32 +676,43 @@ const AREAS = [
       blurb: 'planet.pmtiles only. No regional shard covers this z6 tile, so ' +
         'z12 is the deepest tile Mapterhorn has here.',
     },
+    middle: {
+      model: 'DTM',
+      blurb: 'The bare-earth band, also at z13. 129.2 MB, lon -73.125 to ' +
+        '-70.3125, lat -16.636 to -11.178.',
+    },
     right: {
       model: 'DSM',
-      blurb: 'The GEM-15 build reaches z13, one level deeper than production. ' +
-        '129.4 MB, lon -73.125 to -70.3125, lat -16.636 to -11.178.',
+      blurb: 'The surface band, with canopy in it. Both bands reach z13, one ' +
+        'level deeper than production. 129.4 MB.',
     },
     explainer:
       '<b>Cusco: one level deeper, from a finer source.</b> ' +
       'Mapterhorn is GLO-30-only here, because no regional shard exists. The ' +
       'GEM-15 build adds z13, one level deeper than production, from a 15 m ' +
-      'source rather than a 30 m one. This is where the experiment pays. Our ' +
-      'archives also carry the Sau-style water-void fill from Copernicus ' +
-      'GLO-30.',
+      'source rather than a 30 m one. This is where the experiment pays. Both ' +
+      'GEM-15 panes carry that gain, and the pair also shows the two bands: ' +
+      'the DTM reads 3.75 m below the DSM at Ollantaytambo and 0.00 m below ' +
+      'it on the open ground of the Cusco valley. <b>The Machu Picchu preset ' +
+      'reads 92.25 m, which is not canopy.</b> Read the note on the two bands ' +
+      'before you trust a gap on steep ground.',
     places: [
       {
         label: 'Machu Picchu',
-        hint: 'The citadel ridge, where 15 m and 30 m part company on a cliff.',
+        hint: 'The citadel ridge, where 15 m and 30 m part company on a cliff. '
+          + 'The 92.25 m band gap here is a sub-pixel artefact, not canopy.',
         center: [-72.5450, -13.1630], zoom: 14,
       },
       {
         label: 'Cusco valley',
-        hint: 'The city at 3400 m, in a valley the coarse grid rounds off.',
+        hint: 'The city at 3400 m, in a valley the coarse grid rounds off. '
+          + 'Open ground, and the two bands agree exactly.',
         center: [-71.9780, -13.5190], zoom: 13.5,
       },
       {
         label: 'Ollantaytambo',
-        hint: 'Terraces in the Sacred Valley, under 4000 m walls.',
+        hint: 'Terraces in the Sacred Valley, under 4000 m walls. DTM minus '
+          + 'DSM is 3.75 m.',
         center: [-72.2650, -13.2575], zoom: 14,
       },
     ],
@@ -619,7 +720,8 @@ const AREAS = [
   {
     id: 'atlas',
     label: 'High Atlas–Toubkal',
-    archive: 'mapterhorn-gem15-atlas.pmtiles',
+    archiveDtm: 'mapterhorn-gem15-atlas-dtm.pmtiles',
+    archiveDsm: 'mapterhorn-gem15-atlas.pmtiles',
     coverage: [-8.4375, 29.5352, -5.625, 34.3071],
     // The footprint crosses from the z6 tile 30/26, where no shard exists,
     // into 30/25, where one does. 6-30-25.pmtiles answers 200. The top edge of
@@ -638,32 +740,44 @@ const AREAS = [
       blurb: 'planet.pmtiles only. 6-30-26, the z6 tile that holds Toubkal, ' +
         'has no shard, so z12 is the deepest tile here.',
     },
+    middle: {
+      model: 'DTM',
+      blurb: 'The bare-earth band, at z13. 112.3 MB, lon -8.4375 to -5.625, ' +
+        'lat 29.535 to 34.307.',
+    },
     right: {
       model: 'DSM',
-      blurb: 'The GEM-15 build reaches z13. 114.6 MB, lon -8.4375 to -5.625, ' +
-        'lat 29.535 to 34.307.',
+      blurb: 'The surface band. Both bands reach z13, one level deeper than ' +
+        'production. 114.6 MB.',
     },
     explainer:
       '<b>High Atlas: the same gain, on harder ground.</b> ' +
       'Mapterhorn is GLO-30-only here, because no regional shard exists. The ' +
       'GEM-15 build adds z13, one level deeper than production, from a 15 m ' +
-      'source rather than a 30 m one. This is where the experiment pays. Our ' +
-      'archives also carry the Sau-style water-void fill from Copernicus ' +
-      'GLO-30.',
+      'source rather than a 30 m one. This is where the experiment pays. ' +
+      'Above the tree line there is almost nothing for the DTM band to ' +
+      'remove, and the measurements say so: 0.75 m at the Toubkal summit, ' +
+      '0.00 m at Oukaimeden, 3.00 m in the Imlil valley. The same ground also ' +
+      'shows why a gap is not an object height. 150 m west of the summit, at ' +
+      '7.91W 31.06N, the gap reads 10.25 m on an 8.18 m pixel. Read the note ' +
+      'on the two bands.',
     places: [
       {
         label: 'Toubkal',
-        hint: 'The summit at 4167 m, the high point of North Africa.',
+        hint: 'The summit at 4167 m, the high point of North Africa. Bare '
+          + 'rock, and the two bands differ by 0.75 m.',
         center: [-7.9147, 31.0606], zoom: 14,
       },
       {
         label: 'Imlil valley',
-        hint: 'The Mizane valley at 1740 m, the walk-in to Toubkal.',
+        hint: 'The Mizane valley at 1740 m, the walk-in to Toubkal. DTM minus '
+          + 'DSM is 3.00 m.',
         center: [-7.9190, 31.1360], zoom: 14,
       },
       {
         label: 'Oukaimeden',
-        hint: 'A high basin at about 2800 m, under the Jbel Attar ridge.',
+        hint: 'A high basin at about 2800 m, under the Jbel Attar ridge. The '
+          + 'two bands agree exactly.',
         center: [-7.8610, 31.1930], zoom: 13.5,
       },
     ],
@@ -676,7 +790,7 @@ const areaById = new Map(AREAS.map((area) => [area.id, area]));
 // The shared hypsometric ramp
 //
 // Stops match the catalog's hypsometric.json, in metres above the geoid. One
-// absolute ramp across both panes is what makes the colours comparable: a
+// absolute ramp across the three panes is what makes the colours comparable: a
 // per-source stretch would hide exactly the disagreement this page is for.
 // ---------------------------------------------------------------------------
 
@@ -814,29 +928,66 @@ async function readMapterhornTile(z, x, y) {
   return result ? { bytes: result.data, note: `${name}.pmtiles` } : null;
 }
 
-function gem15Reader(area) {
-  const url = `${GEM15_BASE}${area.archive}`;
+function gem15Reader(name) {
+  const url = `${GEM15_BASE}${name}`;
   return async (z, x, y) => {
     const result = await archive(url).getZxy(z, x, y);
-    return result ? { bytes: result.data, note: area.archive } : null;
+    return result ? { bytes: result.data, note: name } : null;
   };
 }
 
 // ---------------------------------------------------------------------------
-// The two panes
+// The three panes
 //
 // A pane is fixed. Its source definition, its label and its probe plan all
 // come from the current area, and switching areas rewrites all three.
+//
+// The two GEM-15 panes differ only in which band they read, so one factory
+// builds both. Their geometry is identical, which is why `gemMaxzoom` and
+// `coverage` sit on the area rather than on the band.
 // ---------------------------------------------------------------------------
 
-// Both panes read 512 px tiles: that is the Mapterhorn tile size, and the
+// All three panes read 512 px tiles: that is the Mapterhorn tile size, and the
 // GEM-15 builds come out of the same pipeline.
 const TILE_PX = 512;
+
+function gem15Pane(id, name, archiveKey, face) {
+  return {
+    id,
+    name,
+    face,
+    archiveKey,
+    specFor(area) {
+      return {
+        type: 'raster-dem',
+        url: `pmtiles://${GEM15_BASE}${area[archiveKey]}`,
+        encoding: 'terrarium',
+        tileSize: TILE_PX,
+        minzoom: 0,
+        // The measured maximum. A raster-dem source whose maxzoom overstates
+        // the archive asks for tiles that are not there, and the terrain mesh
+        // tears or flattens where they are missing.
+        maxzoom: area.gemMaxzoom,
+        // The header of all six of these archives declares global bounds,
+        // which is wrong about coverage. The footprint decoded from the root
+        // directory is correct, and it keeps MapLibre from requesting tiles
+        // outside the build.
+        bounds: area.coverage,
+        attribution: GEM15_ATTRIBUTION,
+      };
+    },
+    // Full precision lives at the archive maximum and nowhere shallower, so the
+    // probe asks for that zoom and reports nothing if the tile is missing.
+    probeZoomsFor(area) { return [area.gemMaxzoom]; },
+    readerFor(area) { return gem15Reader(area[archiveKey]); },
+  };
+}
 
 const PANES = [
   {
     id: 'mapterhorn',
     name: 'Mapterhorn today',
+    face: 'left',
     // Their own word for the product. Almost every entry in their catalogue is
     // a national digital terrain model, and one is Copernicus GLO-30.
     specFor(area) {
@@ -863,33 +1014,11 @@ const PANES = [
     },
     readerFor() { return readMapterhornTile; },
   },
-  {
-    id: 'gem15',
-    name: 'Mapterhorn pipeline + GEM-15',
-    specFor(area) {
-      return {
-        type: 'raster-dem',
-        url: `pmtiles://${GEM15_BASE}${area.archive}`,
-        encoding: 'terrarium',
-        tileSize: TILE_PX,
-        minzoom: 0,
-        // The measured maximum. A raster-dem source whose maxzoom overstates
-        // the archive asks for tiles that are not there, and the terrain mesh
-        // tears or flattens where they are missing.
-        maxzoom: area.gemMaxzoom,
-        // The header of every one of these archives declares global bounds,
-        // which is wrong about coverage. The footprint decoded from the root
-        // directory is correct, and it keeps MapLibre from requesting tiles
-        // outside the build.
-        bounds: area.coverage,
-        attribution: GEM15_ATTRIBUTION,
-      };
-    },
-    // Full precision lives at the archive maximum and nowhere shallower, so the
-    // probe asks for that zoom and reports nothing if the tile is missing.
-    probeZoomsFor(area) { return [area.gemMaxzoom]; },
-    readerFor(area) { return gem15Reader(area); },
-  },
+  // The DTM goes in the middle, next to the Mapterhorn pane. Over Barcelona
+  // that puts the two bare-earth models side by side, which is the only pair
+  // on this page that differs by resolution alone.
+  gem15Pane('gem15dtm', 'GEM-15 DTM', 'archiveDtm', 'middle'),
+  gem15Pane('gem15dsm', 'GEM-15 DSM', 'archiveDsm', 'right'),
 ];
 
 function paneStyle(pane, area) {
@@ -926,9 +1055,10 @@ function paneStyle(pane, area) {
 // Terrain
 //
 // Every pane style names its elevation source `dem`, so one id raises the mesh
-// in both. Each mesh is built from that pane's own archive, which is the
+// in all three. Each mesh is built from that pane's own archive, which is the
 // point: at an oblique angle a 15 m surface and a 30 m one are different
-// shapes, not two shadings of one shape.
+// shapes, not two shadings of one shape. The two GEM-15 meshes differ from
+// each other by whatever the DTM model removed.
 //
 // The exaggeration is shared. A per-pane factor would flatter one source and
 // make the panes impossible to read against each other.
@@ -1001,8 +1131,8 @@ for (const pane of PANES) {
   map.addControl(new maplibregl.AttributionControl({ compact: true }), 'bottom-right');
   if (pane.id === PANES[0].id) {
     // The compass earns its place now that the panes rotate, and it doubles as
-    // the way back to north up and flat. One control drives both panes, because
-    // the sync below carries this pane's view to the other.
+    // the way back to north up and flat. One control drives all three panes,
+    // because the sync below carries this pane's view to the other two.
     map.addControl(
       new maplibregl.NavigationControl({ showCompass: true, visualizePitch: true }),
       'top-right',
@@ -1124,14 +1254,14 @@ for (const map of maps) {
   }
 }
 
-// A map that never moves fires no move event, so the second pane is lined up
-// once the first is up.
+// A map that never moves fires no move event, so the follower panes are
+// lined up once the first is up.
 maps[0].once('load', () => syncFrom(maps[0]));
 
 function flyAll(place) {
-  // One map flies and the move handler carries the other, so the two stay
-  // locked together for every frame. A preset keeps whatever pitch and bearing
-  // the reader has set.
+  // One map flies and the move handler carries the other two, so the three
+  // stay locked together for every frame. A preset keeps whatever pitch and
+  // bearing the reader has set.
   maps[0].flyTo({ center: place.center, zoom: place.zoom, duration: 1400, essential: true });
 }
 
@@ -1159,7 +1289,7 @@ function applyArea(area, { initial = false } = {}) {
   const token = arrivalToken;
 
   for (const pane of PANES) {
-    const face = pane.id === 'mapterhorn' ? area.left : area.right;
+    const face = area[pane.face];
     pane.labelModel.textContent = face.model;
     pane.labelBlurb.textContent = face.blurb;
     pane.probeZooms = pane.probeZoomsFor(area);
@@ -1189,7 +1319,7 @@ function applyArea(area, { initial = false } = {}) {
     if (token !== arrivalToken) return;
     for (const map of maps) map.setMaxBounds(boxOf(area.view));
   });
-  // The panes are synced, so one flight carries both.
+  // The panes are synced, so one flight carries all three.
   maps[0].flyTo({ center: area.center, zoom: area.zoom, duration: 2000, essential: true });
 }
 
@@ -1245,7 +1375,7 @@ const exaggerationInput = document.getElementById('exaggeration');
 const exaggerationValue = document.getElementById('exaggeration-value');
 
 // The button drives the first pane only. The sync above carries the pitch to
-// the other, which also keeps the animation locked across the two.
+// the other two, which also keeps the animation locked across the three.
 tiltButton.addEventListener('click', () => {
   const flat = maps[0].getPitch() < 5;
   maps[0].easeTo({ pitch: flat ? TILT_PITCH : 0, duration: 700, essential: true });
@@ -1313,9 +1443,9 @@ function buildPlaces(area) {
 // ---------------------------------------------------------------------------
 // The elevation probe
 //
-// One click, two sources, each read at the best zoom it has here. The panel
+// One click, three sources, each read at the best zoom it has here. The panel
 // prints the elevation, the zoom it came from, the ground resolution of that
-// zoom, the tile and the archive, and then the difference between the two.
+// zoom, the tile and the archive, and then every pair of differences.
 // ---------------------------------------------------------------------------
 
 const probe = document.getElementById('probe');
@@ -1466,14 +1596,25 @@ async function runProbe(lngLat) {
 
   if (token !== probeToken) return;
 
-  const [left, right] = results.map((result) => result.elevation);
-  const delta = left === null || right === null
-    ? '—'
-    : `${right - left >= 0 ? '+' : '−'}${Math.abs(right - left).toFixed(2)} m`;
-  probeDeltas.innerHTML =
-    `<span>GEM-15 − Mapterhorn today: ${delta}</span>` +
-    '<span>GEM-15 is a surface model, so a positive difference over a ' +
-    'building or a canopy is signal rather than error</span>';
+  // Every pair, the same way the three-source page does it. Three panes make
+  // three pairs, and each one answers a different question: DTM against the
+  // Mapterhorn model, DSM against it, and the two bands against each other.
+  const pairs = [];
+  for (let i = 0; i < PANES.length; i++) {
+    for (let j = i + 1; j < PANES.length; j++) {
+      const a = results[i].elevation;
+      const b = results[j].elevation;
+      const value = a === null || b === null
+        ? '—'
+        : `${a - b >= 0 ? '+' : '−'}${Math.abs(a - b).toFixed(2)} m`;
+      pairs.push(`<span>${PANES[i].name} − ${PANES[j].name}: ${value}</span>`);
+    }
+  }
+  // The band pair is the one a reader is most likely to over-read, so the
+  // caveat travels with the number rather than only in the note above.
+  pairs.push('<span>a band gap is the output of the DTM model, not a '
+    + 'measured object height, and it is unreliable on steep ground</span>');
+  probeDeltas.innerHTML = pairs.join('');
 }
 
 // With terrain set, MapLibre unprojects a click against the mesh rather than
@@ -1483,8 +1624,8 @@ async function runProbe(lngLat) {
 //
 // A tilted pane does add one case that a flat one cannot produce. A click on
 // the sky, or past the terrain horizon, lands far outside the view, and no
-// point out there has two sources to compare. Those clicks are dropped rather
-// than answered with two em dashes.
+// point out there has three sources to compare. Those clicks are dropped
+// rather than answered with three em dashes.
 function insideCoverage(lngLat) {
   const [w, s, e, n] = currentArea.coverage;
   return lngLat.lng >= w && lngLat.lng <= e && lngLat.lat >= s && lngLat.lat <= n;

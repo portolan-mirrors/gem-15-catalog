@@ -264,13 +264,23 @@ which zooms it tried and how each one came back.
 
 ## Mapterhorn today beside a GEM-15 build
 
-`mapterhorn-gem15.html` puts what Mapterhorn ships today beside GEM-15 run
-through their pipeline, in two synced panes, over three areas. GitHub Pages
-serves it at
+`mapterhorn-gem15.html` puts what Mapterhorn ships today beside both GEM-15
+bands, in three synced panes, over three areas. GitHub Pages serves it at
 <https://portolan-mirrors.github.io/gem-15-catalog/maplibre-terrain/mapterhorn-gem15.html>.
 
-The archives in the right pane are experimental. They come from an unmerged
-fork, [cholmes/mapterhorn tree gem-15-source](https://github.com/cholmes/mapterhorn/tree/gem-15-source),
+| Pane | Source |
+| --- | --- |
+| left | Mapterhorn today. Spanish lidar over Barcelona, Copernicus GLO-30 elsewhere |
+| middle | GEM-15 DTM, the bare-earth band |
+| right | GEM-15 DSM, the surface band, with buildings and canopy in it |
+
+The middle pane is what makes the Barcelona comparison fair. Mapterhorn serves
+a bare-earth model there, so a surface model beside it differs by two things at
+once: resolution and the model. The GEM-15 DTM beside the lidar DTM is the
+matched test, and the DSM pane then shows what the surface band adds on top.
+
+The archives in the two GEM-15 panes are experimental. They come from an
+unmerged fork, [cholmes/mapterhorn tree gem-15-source](https://github.com/cholmes/mapterhorn/tree/gem-15-source),
 and the upstream discussion is
 [mapterhorn/mapterhorn#368](https://github.com/mapterhorn/mapterhorn/issues/368).
 The Mapterhorn project publishes none of them. The page says so in a note that
@@ -283,7 +293,7 @@ Mapterhorn covers zoom 0 to 12 everywhere from one `planet.pmtiles`, and zoom
 regional archive exists where a national model justifies one, and nowhere else.
 So the honest question is not whether GEM-15 beats Mapterhorn. It is where.
 
-| Area | Mapterhorn today | The GEM-15 build |
+| Area | Mapterhorn today | Both GEM-15 bands |
 | --- | --- | --- |
 | Barcelona | shard `6-32-23`, to zoom 16 | zoom 0 to 12 |
 | Cusco and Machu Picchu | `planet.pmtiles`, zoom 12 | zoom 0 to 13 |
@@ -292,7 +302,9 @@ So the honest question is not whether GEM-15 beats Mapterhorn. It is where.
 Over Barcelona, Mapterhorn production is Spanish lidar at zoom 16. GEM-15
 enters at zoom 12 under the Mapterhorn maxzoom rule, because 15 m at 41N does
 not clear their zoom 13 threshold. GEM-15 does not compete where national lidar
-exists, and the page states that rather than hiding it.
+exists, and the page states that rather than hiding it. The left pane and the
+middle one are both bare earth, and zoom 16 against zoom 12 is the gap between
+them, so that pair is the comparison to read at Montserrat.
 
 Over Cusco and over the High Atlas, Mapterhorn has Copernicus GLO-30 alone,
 because no regional archive exists there. The GEM-15 build adds zoom 13, one
@@ -308,17 +320,24 @@ Everything below was read from the archives on 2026-11-15. Each PMTiles v3
 header came back over a range request, and the root directory was decoded to
 get the real tile footprint. No archive was downloaded in full.
 
-| Archive | Size | Zooms | Footprint from the directory |
-| --- | --- | --- | --- |
-| `mapterhorn-gem15-barcelona.pmtiles` | 42.1 MB | 0 to 12 | lon 0 to 5.625, lat 36.598 to 45.089 |
-| `mapterhorn-gem15-cusco.pmtiles` | 129.4 MB | 0 to 13 | lon &minus;73.125 to &minus;70.3125, lat &minus;16.636 to &minus;11.178 |
-| `mapterhorn-gem15-atlas.pmtiles` | 114.6 MB | 0 to 13 | lon &minus;8.4375 to &minus;5.625, lat 29.535 to 34.307 |
+| Archive | Size | Zooms | Tiles | Footprint from the directory |
+| --- | --- | --- | --- | --- |
+| `mapterhorn-gem15-barcelona.pmtiles` | 42.1 MB | 0 to 12 | 10931 | lon 0 to 5.625, lat 36.598 to 45.089 |
+| `mapterhorn-gem15-barcelona-dtm.pmtiles` | 37.9 MB | 0 to 12 | 10931 | the same |
+| `mapterhorn-gem15-cusco.pmtiles` | 129.4 MB | 0 to 13 | 10929 | lon &minus;73.125 to &minus;70.3125, lat &minus;16.636 to &minus;11.178 |
+| `mapterhorn-gem15-cusco-dtm.pmtiles` | 129.2 MB | 0 to 13 | 10929 | the same |
+| `mapterhorn-gem15-atlas.pmtiles` | 114.6 MB | 0 to 13 | 10931 | lon &minus;8.4375 to &minus;5.625, lat 29.535 to 34.307 |
+| `mapterhorn-gem15-atlas-dtm.pmtiles` | 112.3 MB | 0 to 13 | 10931 | the same |
 
-All three are terrarium WebP, 512 px, uncompressed tiles, minzoom 0. All three
+All six are terrarium WebP, 512 px, uncompressed tiles, minzoom 0. All six
 answer 206 to a range request and send `access-control-allow-origin: *`. One
 tile out of each one was decoded to confirm the tile size and the encoding. The
 heights agree with the ground. Machu Picchu reads 2442 m, Toubkal 4109 m, and
 Imlil 1736 m.
+
+Each DTM archive matches its DSM sibling in minzoom, in maxzoom, and in tile
+count, which the directory column records. So the page keys the footprint and
+the maxzoom off the area and not off the band.
 
 **The header bounds of these archives say the whole world, which is wrong about
 coverage.** So the page declares the measured footprint on the `raster-dem`
@@ -330,6 +349,41 @@ one. `6-32-23.pmtiles` answers 200 and holds the Barcelona view box.
 `6-19-34.pmtiles` answers 404, and it is the only zoom 6 tile the whole Cusco
 footprint falls in. `6-30-26.pmtiles` answers 404, and it holds Toubkal, Imlil,
 and Oukaimeden.
+
+### The band gap, point by point
+
+The GEM-15 DTM is derived from the DSM by a machine-learning model. Nothing in
+the build measures the ground separately. So the gap between the two GEM-15
+panes is the output of that model, and not a measured object height.
+
+Every figure below is DTM minus DSM, read at the deepest zoom each archive has,
+at the preset points of the page, on 2026-11-15.
+
+| Point | Band gap | Ground |
+| --- | --- | --- |
+| Sau reservoir, 2.4000E 41.9700N | 0.00 m | both bands take the GLO-30 water-void fill |
+| Montserrat, 1.8380E 41.5930N | &minus;0.50 m | bare rock |
+| Eixample, 2.1627E 41.3917N | &minus;5.00 m | city blocks, so buildings removed |
+| Ollantaytambo, 72.2650W 13.2575S | &minus;3.75 m | valley floor and terraces |
+| Cusco valley, 71.9780W 13.5190S | 0.00 m | open ground |
+| Toubkal summit, 7.9147W 31.0606N | &minus;0.75 m | bare rock above the tree line |
+| Imlil valley, 7.9190W 31.1360N | &minus;3.00 m | a valley floor at 1736 m |
+| Oukaimeden, 7.8610W 31.1930N | 0.00 m | a high basin |
+| Machu Picchu, 72.5450W 13.1630S | &minus;92.25 m | a citadel ridge, and read on |
+
+DTM is at or below DSM at every one of those points. That is the only thing the
+pair of bands guarantees.
+
+**The size of the gap is not a proxy for canopy or building height on steep
+ground.** Machu Picchu is the proof. No canopy on that ridge is 92 m tall. The
+build mosaics each band independently, the pixel is 9.30 m there, and on a ridge
+that drops hundreds of metres across a few pixels a sub-pixel difference in
+where each band lands moves the number by tens of metres. The High Atlas shows
+the same effect at a readable scale. The gap is 0.75 m at the Toubkal summit and
+10.25 m about 150 m west of it, at 7.91W 31.06N, on an 8.18 m pixel. The flat
+points are the trustworthy ones. The page repeats that caveat in a note that
+stays on screen, in the delta row of the probe, and in the hint on the Machu
+Picchu preset.
 
 ### The view box is not the footprint
 
@@ -344,12 +398,13 @@ in the page records its box and the reason for it.
 
 ### Tilt, sync, and the area switch
 
-Both panes raise a MapLibre terrain mesh from the same `raster-dem` source they
-draw, so an oblique view shows two meshes rather than one mesh with two skins
-on it. The `3D` button tilts both to a pitch of 60, and a right-drag rotates
-and tilts them by hand. One relief slider scales both meshes by one factor.
-Center, zoom, bearing, and pitch all sync, under the same two guards the
-three-pane page uses.
+Each pane raises a MapLibre terrain mesh from the same `raster-dem` source it
+draws, so an oblique view shows three meshes rather than one mesh with three
+skins on it. The two GEM-15 meshes differ from each other by whatever the DTM
+model removed. The `3D` button tilts all three to a pitch of 60, and a
+right-drag rotates and tilts them by hand. One relief slider scales every mesh
+by one factor. Center, zoom, bearing, and pitch all sync, under the same two
+guards `compare.html` uses.
 
 An area switch rewrites three things together: the style of each pane, the
 camera limits, and every place name in the bar. The camera limits need the
@@ -360,21 +415,24 @@ goes on at the end of the flight. A token guards that, because a reader can
 switch area again in mid-flight.
 
 A click reads one elevation out of each pane, at the best zoom that pane has in
-this area. The decode path is the one the three-pane page uses. Over Barcelona
-the left pane walks down from zoom 17 and stops at 16. The right pane reads
-zoom 12. Over the other two areas the left pane reads zoom 12 and the right
-pane reads zoom 13. The panel prints the elevation, the zoom, the ground
-resolution of that zoom, the tile, the archive the bytes came from, and the
-difference between the two panes.
+this area. The decode path is the one `compare.html` uses. Over Barcelona the
+left pane walks down from zoom 17 and stops at 16, and the two GEM-15 panes read
+zoom 12. Over the other two areas the left pane reads zoom 12 and the two GEM-15
+panes read zoom 13. The panel prints the elevation, the zoom, the ground
+resolution of that zoom, the tile, and the archive the bytes came from. Under
+the cards it prints all three pairs of differences: each band against the
+Mapterhorn model, and then one band against the other. Each pair is a separate
+question, so the panel shows all three.
 
 ### Attribution on this page
 
-The GEM-15 source carries three credits, and all three are required rather than
+Both GEM-15 sources carry three credits, and all three are required rather than
 polite. Google produces the elevation data and licenses it CC-BY-4.0. The
 filled pixels carry the Copernicus notice. The tiles were cut by the Mapterhorn
 pipeline, and the archive metadata itself holds their string, so the page
-repeats it and names the fork. The left pane credits "© Mapterhorn" with a link
-to their attribution page, the same form the three-pane page uses.
+repeats it and names the fork. Both bands come from one build under one
+license, so one string serves them. The left pane credits "© Mapterhorn" with a
+link to their attribution page, the same form `compare.html` uses.
 
 ## The data is not published yet
 
