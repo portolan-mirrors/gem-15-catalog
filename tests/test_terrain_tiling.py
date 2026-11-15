@@ -40,10 +40,16 @@ import mercantile  # noqa: E402
 import numpy as np  # noqa: E402
 
 from build_terrain import (  # noqa: E402
+    MASK_PACKED_BYTES,
+    MASK_SENTINEL_ALL_VOID,
+    MASK_SENTINEL_NO_VOID,
+    TILE_SIZE,
     _CellTileIndex,
     cell_tile_rect,
     keys_present,
+    pack_mask,
     pack_xy,
+    unpack_mask,
     unpack_xy,
 )
 
@@ -183,11 +189,70 @@ def check_key_packing():
         errors.append("keys_present on an empty skip list found a match")
 
 
+def check_mask_format():
+    """void_masks blobs: uniform masks are one byte, mixed masks stay in
+    the legacy packed form, and every form a previous version of this
+    script could have written still reads back exactly.
+
+    The derive stage averages elevation through these masks, so a mask
+    that round-trips wrongly silently corrupts every zoom below
+    --maxzoom, and the production archive holds millions of legacy blobs
+    that the current code must keep reading.
+    """
+    legacy = np.packbits  # the old pack_mask was exactly this, then .tobytes()
+
+    zeros = np.zeros((TILE_SIZE, TILE_SIZE), dtype=bool)
+    ones = np.ones((TILE_SIZE, TILE_SIZE), dtype=bool)
+    rng = np.random.default_rng(7)
+    mixed = rng.random((TILE_SIZE, TILE_SIZE)) < 0.3
+    one_void = zeros.copy()
+    one_void[123, 45] = True
+    one_data = ones.copy()
+    one_data[200, 7] = False
+
+    if pack_mask(zeros) != MASK_SENTINEL_NO_VOID:
+        errors.append("an all-data mask did not become the no-void sentinel")
+    if pack_mask(ones) != MASK_SENTINEL_ALL_VOID:
+        errors.append("an all-void mask did not become the all-void sentinel")
+    for name, mask in (("mixed", mixed), ("one void pixel", one_void),
+                       ("one data pixel", one_data)):
+        blob = pack_mask(mask)
+        if len(blob) != MASK_PACKED_BYTES:
+            errors.append(f"a {name} mask packed to {len(blob)} bytes, "
+                          f"expected {MASK_PACKED_BYTES}")
+
+    # Round-trip every form, including the legacy blobs the production
+    # archive is full of.
+    for name, mask in (("all-data", zeros), ("all-void", ones),
+                       ("mixed", mixed), ("one void pixel", one_void),
+                       ("one data pixel", one_data)):
+        if not np.array_equal(unpack_mask(pack_mask(mask)), mask):
+            errors.append(f"{name} mask did not round-trip through "
+                          f"pack_mask/unpack_mask")
+        legacy_blob = legacy(mask).tobytes()
+        if len(legacy_blob) != MASK_PACKED_BYTES:
+            errors.append(f"legacy blob for {name} is {len(legacy_blob)} bytes")
+        if not np.array_equal(unpack_mask(legacy_blob), mask):
+            errors.append(f"LEGACY {name} mask did not read back correctly -- "
+                          f"this would corrupt derivation on the banked archive")
+
+    for bad in (b"", b"\x01", b"\x00" * 7, b"\x00" * (MASK_PACKED_BYTES + 1)):
+        try:
+            unpack_mask(bad)
+        except ValueError:
+            pass
+        else:
+            errors.append(f"unpack_mask accepted a {len(bad)}-byte blob")
+    print(f"  mask format: sentinels 1 byte, mixed {MASK_PACKED_BYTES} bytes, "
+          f"legacy blobs still read")
+
+
 def main() -> int:
     cells, source = load_cells()
     print(f"{len(cells)} cell(s) from {source}; zooms {list(ZOOMS)}")
 
     check_key_packing()
+    check_mask_format()
     check_rects(cells)
 
     for z in ZOOMS:

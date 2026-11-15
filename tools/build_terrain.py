@@ -329,6 +329,40 @@ rather than die on it: RUNBOOK.md's sbatch shape shows the pattern.
 
 ## Output format
 
+## The working database's own size
+
+The ``void_masks`` row for a tile used to be a flat 8,192 packed bytes,
+written for every tile in every mode. Measured on a real two-cell
+z10-z13 build, 96.4% of masks (1,894 of 1,965) have no void pixel at
+all, so nearly all of that was 8 KB spent to say "nothing here". At
+global z14 the packed form costs **334 GB** of working database against
+roughly 40 GB of finished archive, and it grows the database by
+**24.2 MiB per processed cell**, terrain-independent. A uniform mask is
+now a single byte (``pack_mask``), which takes that to about 12-15 GB.
+``unpack_mask`` still reads the 8,192-byte form, so a database written by
+an earlier build resumes with no migration and ends up holding both
+forms.
+
+This matters well beyond disk, and it is what killed the second global
+run. Measured on the cluster at the moment of the kill, against a
+200 GiB cap: cgroup ``memory.current`` ~200.0 GiB, of which ``file``
+183.0 GiB, ``anon`` 16.3 GiB, ``shmem`` 0, with the process's own
+``VmRSS`` at **7.65 GiB**. Under cgroup v2 a file's page cache counts
+toward ``memory.max``, so the working database's cache was being charged
+to the job while the process itself used under 17 GiB. The run's
+trough-RSS fit climbed 19-27 MiB per processed cell; the database's own
+growth at global tile sizes is 26.5-29.4 MiB per cell. Same number.
+
+``--memory-log N`` exists so this is visible rather than inferred: it
+reports the cgroup's anon/file/shmem split next to process RSS, the
+database and WAL sizes, and the real ``.nbytes`` of the in-flight
+containers. A resume also charges the inherited file all at once -- a
+``cp`` plus ``sha256sum`` of a 176.5 GB database populated ~176 GB of
+charged cache before a single tile was built -- so a job script should
+use direct I/O for those steps or trim the cache after them.
+
+## Output format
+
 An intermediate MBTiles (SQLite) is built first -- resumable tile-by-tile,
 with standard ``tiles``/``metadata`` tables, a non-standard ``void_masks``
 table this script's own derivation and ``--verify`` read back, ``format=
@@ -365,6 +399,7 @@ import argparse
 import io
 import math
 import os
+import resource
 import sqlite3
 import subprocess
 import sys
@@ -798,6 +833,218 @@ def log(msg: str) -> None:
 
 
 # --------------------------------------------------------------------------
+# memory sampling (--memory-log)
+# --------------------------------------------------------------------------
+
+class MemorySampler:
+    """Periodic, greppable memory telemetry for a long build.
+
+    Exists because the global z14 run was killed twice at the same
+    progress point with a floor that climbed 19-27 MiB per processed
+    cell, and the tools usually reached for cannot see why:
+
+    - ``tracemalloc`` does not account numpy buffers in this environment
+      (measured: it reported under 2 MB while hundreds of MB of arrays
+      were live), so it is the wrong instrument for the cell and tile
+      arrays, though it is the right one for dict/list/bytes growth.
+    - ``sys.getsizeof`` returns about 112 bytes for any ndarray, so a
+      size sweep built on it reports nothing.
+
+    What does work, and is what this samples: the process's own RSS, the
+    cgroup's split of anonymous against file and shmem pages (the
+    difference between "my heap grew" and "my files are being charged to
+    me"), the working database's own size, explicit ``.nbytes`` sums over
+    the containers that could retain arrays, the mapping count as an
+    allocator-arena fingerprint, and a periodic ``malloc_trim`` probe
+    whose RSS drop is a definitive verdict on allocator retention.
+
+    Every field is optional and every read is guarded: a platform without
+    ``/proc`` (a laptop smoke test) still gets RSS through
+    ``resource.getrusage`` and simply omits the rest.
+    """
+
+    #: One in this many samples also runs malloc_trim and reports the RSS
+    #: it returned to the OS. The trim itself can take order 100 ms on a
+    #: large heap, which is why it is not every sample.
+    TRIM_EVERY = 10
+
+    def __init__(self, db_path: Path | None = None):
+        self.db_path = db_path
+        self.n = 0
+        self._cgroup_stat = self._find_cgroup_stat()
+        self._libc = None
+        if sys.platform.startswith("linux"):
+            try:
+                import ctypes
+
+                self._libc = ctypes.CDLL("libc.so.6", use_errno=True)
+            except Exception:  # noqa: BLE001 - telemetry must never break a build
+                self._libc = None
+
+    # -- platform probes ---------------------------------------------------
+
+    @staticmethod
+    def _find_cgroup_stat() -> Path | None:
+        """memory.stat for this process, cgroup v2 first, then v1."""
+        try:
+            for line in Path("/proc/self/cgroup").read_text().splitlines():
+                parts = line.split(":", 2)
+                if len(parts) == 3 and parts[0] == "0":
+                    p = Path("/sys/fs/cgroup") / parts[2].lstrip("/") / "memory.stat"
+                    if p.exists():
+                        return p
+        except Exception:  # noqa: BLE001
+            pass
+        for p in (Path("/sys/fs/cgroup/memory.stat"),
+                  Path("/sys/fs/cgroup/memory/memory.stat")):
+            if p.exists():
+                return p
+        return None
+
+    @staticmethod
+    def _proc_status_kb() -> dict[str, int]:
+        out: dict[str, int] = {}
+        try:
+            for line in Path("/proc/self/status").read_text().splitlines():
+                if line.startswith(("VmRSS:", "VmHWM:")):
+                    k, v = line.split(":", 1)
+                    out[k] = int(v.split()[0])
+        except Exception:  # noqa: BLE001
+            pass
+        return out
+
+    def _rss_bytes(self) -> tuple[int | None, bool]:
+        """(resident bytes, is_current). Off Linux there is no /proc, and
+        ``ru_maxrss`` is a high-water mark that never falls, so the caller
+        labels it differently rather than passing a peak off as a current
+        reading."""
+        kb = self._proc_status_kb().get("VmRSS")
+        if kb is not None:
+            return kb * 1024, True
+        try:
+            v = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
+            # macOS reports bytes, Linux kilobytes; only reached off Linux.
+            return (int(v) if sys.platform == "darwin" else int(v) * 1024), False
+        except Exception:  # noqa: BLE001
+            return None, False
+
+    def _cgroup_fields(self) -> dict[str, int]:
+        if self._cgroup_stat is None:
+            return {}
+        wanted = {"anon", "file", "shmem",          # v2
+                  "total_rss", "total_cache", "total_shmem"}  # v1
+        out: dict[str, int] = {}
+        try:
+            for line in self._cgroup_stat.read_text().splitlines():
+                parts = line.split()
+                if len(parts) == 2 and parts[0] in wanted:
+                    out[parts[0]] = int(parts[1])
+            current = self._cgroup_stat.parent / "memory.current"
+            if current.exists():
+                out["cgroup_current"] = int(current.read_text().strip())
+            else:
+                usage = self._cgroup_stat.parent / "memory.usage_in_bytes"
+                if usage.exists():
+                    out["cgroup_current"] = int(usage.read_text().strip())
+        except Exception:  # noqa: BLE001
+            pass
+        return out
+
+    @staticmethod
+    def _maps_count() -> int | None:
+        """Number of VM mappings. A count that climbs with throughput is
+        the fingerprint of glibc arena growth."""
+        try:
+            with open("/proc/self/maps") as fh:
+                return sum(1 for _ in fh)
+        except Exception:  # noqa: BLE001
+            return None
+
+    def _db_sizes(self) -> dict[str, int]:
+        if self.db_path is None:
+            return {}
+        out: dict[str, int] = {}
+        for suffix, key in (("", "db"), ("-wal", "wal"), ("-shm", "shm")):
+            try:
+                out[key] = (self.db_path.parent /
+                            (self.db_path.name + suffix)).stat().st_size
+            except OSError:
+                pass
+        return out
+
+    def _malloc_trim(self) -> tuple[int | None, int | None]:
+        """RSS before and after returning free heap to the OS. A large drop
+        means the memory was held by the allocator, not by live objects."""
+        if self._libc is None or not hasattr(self._libc, "malloc_trim"):
+            return None, None
+        before, _ = self._rss_bytes()
+        try:
+            self._libc.malloc_trim(0)
+        except Exception:  # noqa: BLE001
+            return before, None
+        return before, self._rss_bytes()[0]
+
+    # -- the sample itself -------------------------------------------------
+
+    def sample(self, label: str, **extra) -> None:
+        """Emit one ``memlog`` line. `extra` carries the caller's own
+        container sizes, already summed (see rewarp_nbytes below)."""
+        self.n += 1
+        fields: list[str] = [label]
+
+        rss, is_current = self._rss_bytes()
+        if rss is not None:
+            fields.append(f"{'rss' if is_current else 'rss_peak'}="
+                          f"{rss / 2**20:.0f}MiB")
+        hwm = self._proc_status_kb().get("VmHWM")
+        if hwm is not None:
+            fields.append(f"hwm={hwm / 1024:.0f}MiB")
+
+        cg = self._cgroup_fields()
+        for key, name in (("cgroup_current", "cg_current"),
+                          ("anon", "cg_anon"), ("file", "cg_file"),
+                          ("shmem", "cg_shmem"), ("total_rss", "cg_rss"),
+                          ("total_cache", "cg_cache"),
+                          ("total_shmem", "cg_shmem")):
+            if key in cg:
+                fields.append(f"{name}={cg[key] / 2**20:.0f}MiB")
+
+        for key, value in self._db_sizes().items():
+            fields.append(f"{key}={value / 2**20:.0f}MiB")
+
+        for key, value in extra.items():
+            if isinstance(value, float):
+                fields.append(f"{key}={value:.1f}")
+            else:
+                fields.append(f"{key}={value}")
+
+        maps = self._maps_count()
+        if maps is not None:
+            fields.append(f"maps={maps}")
+
+        if self.n % self.TRIM_EVERY == 0:
+            before, after = self._malloc_trim()
+            if before is not None and after is not None:
+                fields.append(
+                    f"malloc_trim_freed={(before - after) / 2**20:.0f}MiB")
+
+        log("memlog " + " ".join(fields))
+
+
+def arrays_nbytes(values) -> int:
+    """Total buffer bytes of the numpy arrays in `values`, skipping
+    anything that is not an array. The only reliable way to size numpy
+    retention: ``sys.getsizeof`` reports about 112 bytes per array
+    regardless of its buffer."""
+    total = 0
+    for v in values:
+        arr = getattr(v, "nbytes", None)
+        if isinstance(arr, int):
+            total += arr
+    return total
+
+
+# --------------------------------------------------------------------------
 # terrarium codec
 # --------------------------------------------------------------------------
 
@@ -866,13 +1113,58 @@ def encode_tile_bytes(rgb: np.ndarray, tile_format: str) -> bytes:
     return buf.getvalue()
 
 
+#: Exact length of a fully-packed 256x256 mask: the legacy (and still the
+#: mixed-case) representation. No other length is ever written as a packed
+#: mask, which is what makes the one-byte sentinels below unambiguous
+#: without a version field.
+MASK_PACKED_BYTES = TILE_SIZE * TILE_SIZE // 8  # 8192
+
+#: One-byte stand-ins for the two uniform masks, which is nearly every
+#: mask. Measured on a real two-cell z10-z13 build: 1,894 of 1,965 tiles
+#: (96.4%) have no void pixel at all, and a packed mask spends 8,192 bytes
+#: to say so. At global z14 (40.753M tiles) the packed form costs
+#: **334 GB** of working database against roughly 40 GB of actual tiles,
+#: and it grows the database by 24.2 MiB per processed cell independently
+#: of terrain. The sentinels take that to about 12-15 GB.
+#:
+#: The byte values are not arbitrary: b"\x00" is what the first byte of a
+#: packed no-void mask already is, and b"\xff" likewise for all-void, so a
+#: reader that mistook a sentinel for a truncated packed mask would still
+#: read the right bit pattern for the part it saw.
+MASK_SENTINEL_NO_VOID = b"\x00"
+MASK_SENTINEL_ALL_VOID = b"\xff"
+
+
 def pack_mask(void_mask: np.ndarray) -> bytes:
-    """(256, 256) bool -> 8192 bytes, for the void_masks table."""
+    """(256, 256) bool -> the void_masks blob: one byte for a uniform mask,
+    otherwise 8192 packed bytes."""
+    if not void_mask.any():
+        return MASK_SENTINEL_NO_VOID
+    if void_mask.all():
+        return MASK_SENTINEL_ALL_VOID
     return np.packbits(void_mask).tobytes()
 
 
 def unpack_mask(data: bytes) -> np.ndarray:
-    """Inverse of pack_mask."""
+    """Inverse of pack_mask, and of every earlier version of pack_mask.
+
+    A blob written by an older build of this script is always exactly
+    ``MASK_PACKED_BYTES`` long, so length alone distinguishes the two
+    forms and a mixed database (legacy rows plus sentinel rows, which is
+    exactly what resuming the banked global archive produces) reads
+    correctly with no migration and no rewrite of the rows already there.
+    """
+    if len(data) == 1:
+        if data == MASK_SENTINEL_NO_VOID:
+            return np.zeros((TILE_SIZE, TILE_SIZE), dtype=bool)
+        if data == MASK_SENTINEL_ALL_VOID:
+            return np.ones((TILE_SIZE, TILE_SIZE), dtype=bool)
+        raise ValueError(f"unknown one-byte void mask sentinel {data!r}")
+    if len(data) != MASK_PACKED_BYTES:
+        raise ValueError(
+            f"void mask blob is {len(data)} bytes; expected 1 (sentinel) "
+            f"or {MASK_PACKED_BYTES} (packed)"
+        )
     return np.unpackbits(np.frombuffer(data, dtype=np.uint8)).astype(bool).reshape(TILE_SIZE, TILE_SIZE)
 
 
@@ -1010,7 +1302,8 @@ def open_mbtiles(path: Path) -> sqlite3.Connection:
         " PRIMARY KEY (zoom_level, tile_column, tile_row))"
     )
     # Non-standard. Holds the pre-0-fill void mask for every tile this
-    # script wrote (packed bits, 8192 bytes/tile), so --overview-mode
+    # script wrote (one byte for a uniform mask, else 8192 packed bytes
+    # -- see pack_mask), so --overview-mode
     # average can NaN-aware-average a zoom from the one below it without
     # re-deriving "was this really void or just coincidentally 0 m" from
     # already-filled data (impossible) or re-reading from source (defeats
@@ -1488,6 +1781,10 @@ class RewarpResult(NamedTuple):
     failed_cell_ids: tuple[str, ...]
     cells_admitted: int
     unfinished_shared: int
+    #: Tiles that composited correctly but could not be encoded. They are
+    #: absent from the archive, never partial, so they make the run
+    #: PARTIAL and a rerun redoes exactly them.
+    failed_encodes: int = 0
 
     @property
     def failed_cells(self) -> int:
@@ -1607,6 +1904,8 @@ def build_zoom_rewarp(
     committer: CommitScheduler,
     fill_voids: bool = True,
     tile_format: str = "png",
+    sampler: MemorySampler | None = None,
+    sampler_every_cells: int = 50,
 ) -> RewarpResult:
     """Build zoom z by warping every selected cell from source.
 
@@ -1651,8 +1950,10 @@ def build_zoom_rewarp(
     pending: dict[tuple[int, int], list] = {}
     pending_high = 0
     written = 0
+    failed_encodes = 0
     failed_cell_ids: list[str] = []
     pending_encode: list = []
+    sampler_every = max(sampler_every_cells, 1)
     t0 = time.time()
     done_n = 0
 
@@ -1661,16 +1962,29 @@ def build_zoom_rewarp(
     with ThreadPoolExecutor(max_workers=encode_workers) as encode_pool:
 
         def drain_ready_encodes() -> None:
-            nonlocal written
+            nonlocal written, failed_encodes
             still = []
             for ef, xy in pending_encode:
-                if ef.done():
-                    data = ef.result()
-                    write_tile(conn, z, xy[0], xy[1], data, void_cache.pop(xy))
-                    written += 1
-                    committer.tick()
-                else:
+                if not ef.done():
                     still.append((ef, xy))
+                    continue
+                try:
+                    data = ef.result()
+                except Exception as exc:  # noqa: BLE001 - degrade per tile, never kill the zoom
+                    # Same policy as a failed cell fetch: the tile is
+                    # simply never written, so a rerun redoes exactly it.
+                    # Before this guard an encode-time failure (a
+                    # MemoryError in Pillow being the realistic one on a
+                    # build that has already been OOM-killed twice)
+                    # propagated out of here and took the whole zoom down.
+                    failed_encodes += 1
+                    void_cache.pop(xy, None)
+                    log(f"  WARNING: z{z} tile {xy} failed to encode, "
+                        f"leaving it unfinished this run: {exc}")
+                    continue
+                write_tile(conn, z, xy[0], xy[1], data, void_cache.pop(xy))
+                written += 1
+                committer.tick()
             pending_encode[:] = still
 
         def submit_encode(xy: tuple[int, int], elev: np.ndarray, void: np.ndarray) -> None:
@@ -1679,6 +1993,23 @@ def build_zoom_rewarp(
             void_cache[xy] = void
             ef = encode_pool.submit(lambda e=elev: encode_tile_bytes(encode_terrarium(e), tile_format))
             pending_encode.append((ef, xy))
+
+        # No bound on the encode backlog, deliberately. Nothing bounds
+        # encode submission: one cell's on_result submits every tile only
+        # that cell covers -- about 2,900 of 3,022 at global z14 -- in a
+        # tight loop before the first drain, each holding a 256 KB
+        # quantized elevation array in its lambda plus a 64 KB void mask
+        # in `void_cache`, so roughly 930 MB per cell in theory. Measured
+        # on the real global run, it never materialized: the `encoding`
+        # field of the progress line stayed at 0 for effectively the whole
+        # run, with a single blip to 35, because 32 encode workers finish
+        # a cell's tiles long before the next cell's warp lands. A bound
+        # was written and then removed rather than shipped unused: the
+        # memlog `encoding` field is the trigger to watch, and if it ever
+        # does climb, the call belongs immediately after each finalize(),
+        # not after the shared-tile branch only -- which is the mistake
+        # the first attempt made, capping 3.3% of submissions and letting
+        # the backlog reach 649 against a cap of 64.
 
         def finalize(xy: tuple[int, int], arr: np.ndarray | None) -> None:
             if arr is None:
@@ -1754,29 +2085,58 @@ def build_zoom_rewarp(
                 log(f"  z{z}: {done_n}/{len(admitted)} cells ({rate:.2f}/s), "
                     f"{written} tile(s) written, {len(pending)} pending "
                     f"(peak {pending_high}), {len(pending_encode)} encoding, "
-                    f"{len(failed_cell_ids)} cell failure(s)")
+                    f"{len(failed_cell_ids)} cell failure(s)"
+                    + (f", {failed_encodes} encode failure(s)"
+                       if failed_encodes else ""))
+            if sampler is not None and done_n % sampler_every == 0:
+                sampler.sample(
+                    f"z{z} cell {done_n}/{len(admitted)}",
+                    written=written,
+                    pending=len(pending),
+                    pending_mib=arrays_nbytes(e[1] for e in pending.values()) / 2**20,
+                    encoding=len(pending_encode),
+                    void_cache=len(void_cache),
+                    void_cache_mib=arrays_nbytes(void_cache.values()) / 2**20,
+                )
 
         window = max(window_multiplier * workers, 1)
         run_bounded(admitted, submit_fetch, on_result, workers, window)
 
         # Drain whatever encodes are still outstanding, blocking this time.
+        # Same per-tile degradation as drain_ready_encodes: one tile that
+        # cannot be encoded must not discard the rest of the zoom's work.
         for ef, xy in pending_encode:
-            data = ef.result()
+            try:
+                data = ef.result()
+            except Exception as exc:  # noqa: BLE001 - degrade per tile
+                failed_encodes += 1
+                void_cache.pop(xy, None)
+                log(f"  WARNING: z{z} tile {xy} failed to encode, leaving "
+                    f"it unfinished this run: {exc}")
+                continue
             write_tile(conn, z, xy[0], xy[1], data, void_cache.pop(xy))
             written += 1
             committer.tick()
+        pending_encode.clear()
 
     committer.flush()
     if pending or failed_cell_ids:
         log(f"  z{z}: {len(failed_cell_ids)} cell(s) failed and {len(pending)} "
             f"shared boundary tile(s) are still waiting on one; neither is "
             f"written. Rerun to retry -- it only redoes what is missing.")
+    if failed_encodes:
+        log(f"  z{z}: {failed_encodes} tile(s) could not be encoded this "
+            f"run; they are absent, not partial. Rerun to retry.")
+    if sampler is not None:
+        sampler.sample(f"z{z} end", written=written,
+                       pending=len(pending), pending_high=pending_high)
     return RewarpResult(
         written=written,
         already=n_done,
         failed_cell_ids=tuple(failed_cell_ids),
         cells_admitted=len(admitted),
         unfinished_shared=len(pending),
+        failed_encodes=failed_encodes,
     )
 
 
@@ -1812,6 +2172,8 @@ def derive_zoom_from_child(
     quantize: bool,
     committer: CommitScheduler,
     tile_format: str = "png",
+    sampler: MemorySampler | None = None,
+    sampler_every_tiles: int = 5000,
 ) -> tuple[int, int, int]:
     """Build zoom z purely from the already-built zoom child_z (= z+1) in
     the same MBTiles -- no source reads, no network. Returns (written,
@@ -1923,6 +2285,8 @@ def derive_zoom_from_child(
         if done_n % 500 == 0 or done_n == n_parents:
             rate = done_n / max(time.time() - t0, 1e-6)
             log(f"  z{z}: {done_n}/{n_parents} tile(s) derived ({rate:.1f}/s)")
+        if sampler is not None and done_n % max(sampler_every_tiles, 1) == 0:
+            sampler.sample(f"z{z} derive {done_n}/{n_parents}", written=written)
 
     # derive_one runs in run_bounded's own worker threads and only *reads*
     # -- via read_child/read_tile_and_mask's own private, per-thread,
@@ -2213,6 +2577,7 @@ def log_build_summary(
     failed_cells: int,
     unfinished_shared: int,
     failed_derived: int,
+    failed_encodes: int = 0,
 ) -> bool:
     """Print what the archive actually holds against what was asked for.
     Returns True only if it covers the requested scope.
@@ -2251,6 +2616,8 @@ def log_build_summary(
             f"{unfinished_shared} shared boundary tile(s) still waiting on a "
             f"failed neighbouring cell"
         )
+    if failed_encodes:
+        reasons.append(f"{failed_encodes} tile(s) failed to encode")
     if failed_derived:
         reasons.append(f"{failed_derived} tile(s) failed to derive")
     if reasons:
@@ -2305,6 +2672,13 @@ def main() -> int:
                    help="in-flight cell-fetch cap = this x --workers")
     p.add_argument("--commit-every-tiles", type=int, default=20_000)
     p.add_argument("--commit-every-seconds", type=float, default=60.0)
+    p.add_argument("--memory-log", type=int, default=0, metavar="N",
+                   help="emit a `memlog` telemetry line every N cells at "
+                        "--maxzoom (and every 100xN derived tiles): process "
+                        "RSS, the cgroup's anon/file/shmem split, working "
+                        "database and WAL sizes, the real .nbytes of the "
+                        "in-flight containers, the VM mapping count, and a "
+                        "malloc_trim probe every 10th sample. 0 disables.")
     p.add_argument("--no-quantize", action="store_true",
                    help="disable per-zoom vertical quantization (for A/B comparison)")
     p.add_argument("--no-void-fill", action="store_true",
@@ -2433,33 +2807,48 @@ def main() -> int:
     failed_cells: set[str] = set()
     total_unfinished_shared = 0
     total_failed_derived = 0
+    total_failed_encodes = 0
+
+    sampler = MemorySampler(mbtiles_path) if args.memory_log else None
+    if sampler is not None:
+        sampler.sample("start")
+    rewarp_kw = dict(
+        fill_voids=fill_voids, tile_format=args.tile_format,
+        sampler=sampler, sampler_every_cells=args.memory_log or 50,
+    )
+    derive_kw = dict(
+        tile_format=args.tile_format, sampler=sampler,
+        sampler_every_tiles=(args.memory_log or 50) * 100,
+    )
 
     if args.overview_mode == "rewarp":
         for z in range(args.minzoom, args.maxzoom + 1):
             r = build_zoom_rewarp(
                 z, cells, args.band, conn, args.workers, encode_workers,
                 args.window_multiplier, args.force, quantize, committer,
-                fill_voids=fill_voids, tile_format=args.tile_format,
+                **rewarp_kw,
             )
             total_written += r.written
             failed_cells.update(r.failed_cell_ids)
             total_unfinished_shared += r.unfinished_shared
+            total_failed_encodes += r.failed_encodes
             maybe_verify(z, bool(r.written or r.already), is_rewarped=True)
     else:
         r = build_zoom_rewarp(
             args.maxzoom, cells, args.band, conn, args.workers, encode_workers,
             args.window_multiplier, args.force, quantize, committer,
-            fill_voids=fill_voids, tile_format=args.tile_format,
+            **rewarp_kw,
         )
         total_written += r.written
         failed_cells.update(r.failed_cell_ids)
         total_unfinished_shared += r.unfinished_shared
+        total_failed_encodes += r.failed_encodes
         maybe_verify(args.maxzoom, bool(r.written or r.already), is_rewarped=True)
 
         for z in range(args.maxzoom - 1, args.minzoom - 1, -1):
             written, already, failed_derived = derive_zoom_from_child(
                 z, z + 1, conn, mbtiles_path, args.workers, args.force, quantize, committer,
-                tile_format=args.tile_format,
+                **derive_kw,
             )
             total_written += written
             total_failed_derived += failed_derived
@@ -2477,7 +2866,10 @@ def main() -> int:
         failed_cells=len(failed_cells),
         unfinished_shared=total_unfinished_shared,
         failed_derived=total_failed_derived,
+        failed_encodes=total_failed_encodes,
     )
+    if sampler is not None:
+        sampler.sample("end")
 
     all_ok = True
     for z, x, y, url, is_rewarped in verify_tiles:

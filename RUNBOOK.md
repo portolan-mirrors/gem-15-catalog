@@ -503,6 +503,24 @@ found three more, at a scale no earlier validation had reached:
    and exits with it after the copy, rather than letting `set -e` skip the
    copy and throw the banked work away.
 
+The patched run was then killed again at the same cap, at roughly the same
+progress point, with the process using under 17 GiB. That found the last
+one:
+
+8. **The working database's page cache was being charged to the job.**
+   Every tile carried a flat 8,192-byte `void_masks` row, so the working
+   MBTiles grows 24.2 MiB per processed cell and would reach ~334 GB of
+   masks at global z14, against ~40 GB of finished archive. Under cgroup
+   v2 that file's page cache counts toward `memory.max`. **Fixed** (the
+   file size, not the accounting): a uniform mask -- 96.4% of them,
+   measured -- is now one byte, which takes the mask table to roughly
+   12-15 GB. `unpack_mask` still reads the 8,192-byte form, so the banked
+   archive resumes with no migration and ends up holding both forms.
+   `--memory-log N` now reports the cgroup's anon/file/shmem split next to
+   process RSS and the database size, so this is visible rather than
+   inferred. See "The working database is the other 334 GB" below for the
+   measured numbers and for the copy/checksum caveat on resume.
+
 ### `--overview-mode`: average (new default) vs. rewarp (the original design)
 
 The original design re-warped every zoom independently from source --
@@ -519,8 +537,10 @@ Box-averaging needs each tile's real pre-fill void mask (not just its
 already-0-filled elevation) to average correctly across a coastline or a
 masked-water edge without a void pixel incorrectly dragging a real one
 toward 0; this is stored per-tile as a packed-bit mask in a new
-`void_masks` table (8192 bytes/tile), written for *every* tile regardless
-of mode.
+`void_masks` table, written for *every* tile regardless of mode. A
+uniform mask (96.4% of them, measured) is a single byte; a mixed one is
+8192 packed bytes. See "The working database is the other 334 GB" below
+for why that distinction turned out to matter a great deal.
 
 **Per-zoom vertical quantization** (Mapterhorn's technique,
 `step(z) = min(2^(19-z) / 256, 1.0)` m: 1 m at z0-z11, 0.5 m at z12, 0.25 m
@@ -590,17 +610,58 @@ estimate: ~2.5-4 hours for the full z0-z14 global build on one
 pre-patch 1.5-6 hours, and still pending the operator's own timing pass on
 the real cluster with the patched code.
 
-**Memory:** the fetch window (2x `--workers` in-flight cell results, each
-139-199 MB at z13 and ~2.05 GiB at z14 as measured on the cluster) is now
-the dominant cost, as it should be: the per-zoom setup structures that
-used to charge 9.0 GB for a global z14 scope regardless of worker count
-charge 3.8 MB after defect 5 above. The other in-flight cost is the open
-shared-boundary tiles, measured at a 9,401-tile (2.46 GB) peak globally.
-Derivation reads small (256x256) tiles from local SQLite and is not a
-memory concern. At `--workers 64` and a 2x window the fetch window alone
-is the figure to budget against; 128 GB (the sbatch shape above) covers it
-at z13, and the validated 32-worker z14 steady state was ~131 GiB, so size
-the `--mem` request from `--workers` and nothing else.
+### The working database is the other 334 GB
+
+**Measured on the real cluster, and it overturns the memory model this
+section used to carry.** At the moment the second global z14 run was
+killed against a 200 GiB cap, the cgroup held:
+
+| | |
+|---|---|
+| `memory.current` | ~200.0 GiB (the cap) |
+| `anon` | 16.3 GiB |
+| **`file`** | **183.0 GiB** |
+| `shmem` | 0 |
+| python `VmRSS` | **7.65 GiB** |
+
+So the process's own memory was never the problem. Under cgroup v2,
+**file-backed page cache counts toward `memory.max`**, and the climbing
+memory was the page cache of the working MBTiles. `/tmp` is genuinely
+real NVMe here (xfs on `nvme0n1`; tmpfs was ruled out), which is why this
+presents as reclaim thrash (pgscan in the tens of billions at ~14%
+efficiency) before the kill rather than as a clean allocation failure.
+
+What makes the file that large is the `void_masks` table. Before the
+sentinel format, every tile's mask was a flat 8,192 bytes, which at
+global z14 (40.753M tiles) is **334 GB against roughly 40 GB of finished
+archive**, and grows the database **24.2 MiB per processed cell**,
+independent of terrain. Measured per-cell database growth at global tile
+sizes is 26.5-29.4 MiB, which is exactly the 19-27 MiB per cell the
+cluster's trough-RSS fit found. The sentinel format takes the mask table
+to roughly 12-15 GB.
+
+Two further consequences the operator should plan for:
+
+- **A resume charges the whole inherited file at once.** The job script's
+  `cp` plus `sha256sum` of a 176.5 GB working database populated ~176 GB
+  of charged page cache within seconds of starting, before a single tile
+  was built. That, not the build, is what made the patched run die
+  earlier than the pre-patch one. Use direct I/O for the copy and
+  checksum steps, or trim the cache afterwards.
+- **`--mem` has to cover the working database, not just the workers.**
+  Sizing it from `--workers` alone is what the pre-patch version of this
+  paragraph advised and it is wrong: at 32 workers the process wanted
+  under 17 GiB.
+
+**Memory that is genuinely the process's:** the fetch window (2x
+`--workers` in-flight cell results, 139-199 MB each at z13), the open
+shared-boundary tiles (measured peak 5,547-6,462 tiles on the real run,
+against a 9,401-tile simulated ceiling), and the encode backlog (measured
+at 0 for nearly the whole run, one blip to 35, so it is not a concern in
+practice and `--encode-backlog-tiles` stays off by default). The per-zoom
+setup structures that used to charge 9.0 GB for a global z14 scope now
+charge 3.8 MB (defect 5). Derivation reads small (256x256) tiles from
+local SQLite and is not a memory concern.
 
 **Resumability**, now accurate post-patch: every `--commit-every-tiles`/
 `--commit-every-seconds` commit is durable (not just once per zoom), a
