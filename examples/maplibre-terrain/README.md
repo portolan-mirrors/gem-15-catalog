@@ -336,7 +336,7 @@ heights agree with the ground. Machu Picchu reads 2442 m, Toubkal 4109 m, and
 Imlil 1736 m.
 
 Each DTM archive matches its DSM sibling in minzoom, in maxzoom, and in tile
-count, which the directory column records. So the page keys the footprint and
+count, as the table records. So the page keys the footprint and
 the maxzoom off the area and not off the band.
 
 **The header bounds of these archives say the whole world, which is wrong about
