@@ -520,6 +520,41 @@ one:
    process RSS and the database size, so this is visible rather than
    inferred. See "The working database is the other 334 GB" below for the
    measured numbers and for the copy/checksum caveat on resume.
+9. **The encode queue was unbounded, and at 24 workers it ran away.**
+   Nothing capped how many tiles could sit waiting to be encoded. One
+   cell's compositing submits every tile only that cell covers -- about
+   2,900 of 3,022 at global z14 -- in a tight loop, and each queued tile
+   pins a 256 KB elevation array in its encode closure plus a 64 KB void
+   mask, so **320 KiB per queued tile**. At 32 workers this never
+   appeared: the `encoding` field of the progress line stayed 0 for the
+   whole run, with one blip to 35. At **24** workers in dense terrain the
+   balance inverted and the real run went 0 (to about cell 200), then
+   2,552 -> 8,428 -> 9,772 -> 16,640 -> **24,868 by cell 650 and still
+   climbing** -- 7.6 GiB pinned at that depth, unbounded, and visible as
+   violent anonymous-memory oscillation (a 79 GiB self-release in one
+   step) as the pool drained bursts. The fetch window stayed bounded
+   throughout, so this is the same defect class as defect 5 one stage
+   downstream.
+
+   **The condition that exposes it**: fetch outpacing encode. Fewer fetch
+   workers means each warp lands sooner relative to the encode pool's
+   throughput, and dense terrain means a high-entropy PNG takes far
+   longer than the 5.3 ms a smooth smoke tile measured. Both push the
+   same way, which is why a 32-worker run over ocean-heavy cells looked
+   clean and a 24-worker run over mountains did not.
+
+   **Fixed**: `--encode-backlog-tiles`, default `max(2 x
+   --encode-workers, 32)`, blocks submission once the backlog reaches the
+   cap. The cap is therefore also the memory this stage can hold: 320 KiB
+   times the cap. `0` restores the old unbounded behavior for an A/B.
+   The throttle sits inside `submit_encode`, the single choke point every
+   `finalize()` passes through, because a first attempt placed it after
+   the shared-tile branch in `on_result` and so missed the 96.7% fast
+   path entirely -- the backlog still reached 649 against a cap of 64.
+
+   **Interim tilt if an unpatched build has to run**: set
+   `--encode-workers` above `--workers` (the default makes them equal) so
+   the encode pool outpaces the fetch pool and the queue cannot build.
 
 ### `--overview-mode`: average (new default) vs. rewarp (the original design)
 

@@ -150,6 +150,32 @@ extension that releases the GIL during the actual zlib compression, so a
 thread pool (not a process pool, which would add numpy-array pickling
 overhead for no benefit here) genuinely parallelizes it.
 
+That pool's *input queue* is bounded too (``--encode-backlog-tiles``,
+default ``max(2 x --encode-workers, 32)``), and it has to be: bounding
+the fetch window only moves the problem one stage downstream. Each queued
+tile pins a 256 KB quantized elevation array in its encode closure plus a
+64 KB void mask, so **320 KiB per queued tile**, and a single cell's
+compositing submits every tile only that cell covers -- about 2,900 of
+3,022 at global z14 -- in one tight loop. At 32 workers the queue stayed
+empty all run (one blip to 35). At **24** workers in dense terrain it
+reached **24,868 tiles by cell 650 and was still climbing**: 7.6 GiB
+pinned, unbounded, and visible as violent anonymous-memory oscillation as
+the pool drained in bursts. Fewer fetch workers brings each warp in
+sooner relative to encode throughput, and a high-entropy mountain PNG
+takes far longer than the 5.3 ms a smooth smoke tile measured; both tip
+the balance the same way.
+
+The bound lives in ``submit_encode``, the one choke point every
+``finalize()`` passes through, rather than at the call sites: a first
+attempt placed it after the shared-tile branch and so missed the
+``owed <= 1`` fast path carrying 96.7% of submissions, and the backlog
+still reached 649 against a cap of 64. Measured with a deliberately slow
+encoder over two adjacent cells at z13: the backlog holds at exactly the
+cap where the unbounded path reaches 731, the output is byte-identical,
+and the wall time is if anything slightly better, because this
+back-pressure costs nothing a bounded fetch window was not already
+paying.
+
 ## Per-zoom vertical quantization
 
 Before encoding, elevation is rounded to a per-zoom step, following
@@ -1904,6 +1930,7 @@ def build_zoom_rewarp(
     committer: CommitScheduler,
     fill_voids: bool = True,
     tile_format: str = "png",
+    encode_backlog: int = 0,
     sampler: MemorySampler | None = None,
     sampler_every_cells: int = 50,
 ) -> RewarpResult:
@@ -1987,29 +2014,68 @@ def build_zoom_rewarp(
                 committer.tick()
             pending_encode[:] = still
 
+        def await_encode_capacity() -> None:
+            """Block until the encode backlog is under `encode_backlog`.
+
+            Deadlock cannot happen: the encode pool's threads are not this
+            thread, so blocking here never stops an encode from finishing.
+            Progress is guaranteed because ``wait(..., FIRST_COMPLETED)``
+            returns only once at least one queued future is done, and the
+            drain that follows removes every done entry, so the backlog
+            strictly shrinks on every iteration.
+            """
+            if not encode_backlog or len(pending_encode) < encode_backlog:
+                return
+            drain_ready_encodes()
+            while len(pending_encode) >= encode_backlog:
+                wait([ef for ef, _ in pending_encode],
+                     return_when=FIRST_COMPLETED)
+                drain_ready_encodes()
+
         def submit_encode(xy: tuple[int, int], elev: np.ndarray, void: np.ndarray) -> None:
             if quantize:
                 elev = quantize_elevation(elev, z)
+            # Back-pressure lives here, at the one choke point every
+            # finalize() goes through, rather than at the call sites. A
+            # first attempt at this put the throttle after the shared-tile
+            # branch in on_result, which left the `owed <= 1` fast path --
+            # 96.7% of all submissions at global z14 -- completely
+            # unbounded, and the backlog still reached 649 against a cap
+            # of 64. Here no submission path can bypass it, and a future
+            # one cannot be added that does.
+            await_encode_capacity()
             void_cache[xy] = void
             ef = encode_pool.submit(lambda e=elev: encode_tile_bytes(encode_terrarium(e), tile_format))
             pending_encode.append((ef, xy))
 
-        # No bound on the encode backlog, deliberately. Nothing bounds
+        # Why the encode backlog is bounded at all. Nothing used to bound
         # encode submission: one cell's on_result submits every tile only
         # that cell covers -- about 2,900 of 3,022 at global z14 -- in a
-        # tight loop before the first drain, each holding a 256 KB
-        # quantized elevation array in its lambda plus a 64 KB void mask
-        # in `void_cache`, so roughly 930 MB per cell in theory. Measured
-        # on the real global run, it never materialized: the `encoding`
-        # field of the progress line stayed at 0 for effectively the whole
-        # run, with a single blip to 35, because 32 encode workers finish
-        # a cell's tiles long before the next cell's warp lands. A bound
-        # was written and then removed rather than shipped unused: the
-        # memlog `encoding` field is the trigger to watch, and if it ever
-        # does climb, the call belongs immediately after each finalize(),
-        # not after the shared-tile branch only -- which is the mistake
-        # the first attempt made, capping 3.3% of submissions and letting
-        # the backlog reach 649 against a cap of 64.
+        # tight loop, and each queued tile pins a 256 KB quantized
+        # elevation array in its lambda plus a 64 KB void mask in
+        # `void_cache`, so 320 KiB per queued tile.
+        #
+        # At 32 workers the queue stayed empty (`encoding` was 0 for the
+        # whole run with one blip to 35), because the encode pool finished
+        # a cell's tiles long before the next warp landed. At **24**
+        # workers in dense terrain the balance inverted: the real run's
+        # `encoding` field went 0 until about cell 200, then 2,552 ->
+        # 8,428 -> 9,772 -> 16,640 -> 24,868 by cell 650 and still
+        # climbing. 24,868 queued tiles is 7.6 GiB pinned, and the growth
+        # is unbounded, which is what produced the violent anon
+        # oscillation: the compositing thread kept submitting while the
+        # pool fell behind, then a drain wrote tens of thousands of tiles
+        # at once and released the lot in a batch.
+        #
+        # Fewer fetch workers means each cell's warp arrives sooner
+        # relative to the encode pool's throughput, and dense terrain
+        # means a high-entropy PNG takes far longer than the 5.3 ms a
+        # smooth smoke tile measured. Both push the same way.
+        #
+        # A bound also fixes a second-order problem it would be easy to
+        # miss: drain_ready_encodes rescans the whole backlog on every
+        # call, so a 25,000-entry queue cost the compositing thread a
+        # linear sweep per cell. Bounded, that sweep is trivial.
 
         def finalize(xy: tuple[int, int], arr: np.ndarray | None) -> None:
             if arr is None:
@@ -2672,6 +2738,14 @@ def main() -> int:
                    help="in-flight cell-fetch cap = this x --workers")
     p.add_argument("--commit-every-tiles", type=int, default=20_000)
     p.add_argument("--commit-every-seconds", type=float, default=60.0)
+    p.add_argument("--encode-backlog-tiles", type=int, default=-1, metavar="N",
+                   help="cap on tiles queued for encoding. -1 (default) "
+                        "means auto: max(2 x --encode-workers, 32). 0 means "
+                        "unbounded, which is what every run before this flag "
+                        "did and what let the backlog reach 24,868 tiles "
+                        "(7.6 GiB pinned) at 24 workers in dense terrain. "
+                        "Each queued tile pins 320 KiB, so the cap is also "
+                        "the memory this stage can hold.")
     p.add_argument("--memory-log", type=int, default=0, metavar="N",
                    help="emit a `memlog` telemetry line every N cells at "
                         "--maxzoom (and every 100xN derived tiles): process "
@@ -2812,8 +2886,16 @@ def main() -> int:
     sampler = MemorySampler(mbtiles_path) if args.memory_log else None
     if sampler is not None:
         sampler.sample("start")
+    if args.encode_backlog_tiles < 0:
+        encode_backlog = max(2 * encode_workers, 32)
+    else:
+        encode_backlog = args.encode_backlog_tiles
+    log("encode backlog cap: "
+        + (f"{encode_backlog} tile(s) (~{encode_backlog * 320 / 1024:.1f} MiB "
+           f"pinned at most)" if encode_backlog else "unbounded"))
     rewarp_kw = dict(
         fill_voids=fill_voids, tile_format=args.tile_format,
+        encode_backlog=encode_backlog,
         sampler=sampler, sampler_every_cells=args.memory_log or 50,
     )
     derive_kw = dict(
