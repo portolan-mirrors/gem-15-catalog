@@ -221,9 +221,22 @@ mkdir -p "$SCRATCH" "$DEST_DIR"
 # Everything this build produces (the working MBTiles/WAL/SHM, and the
 # --output .pmtiles itself) stays on node-local scratch until the copy at
 # the bottom of this script has been independently verified.
+#
+# The status is captured rather than allowed to kill the script, because
+# exit code 3 means "finished, but this archive does not cover the
+# requested scope" (build_terrain.py's PARTIAL summary). Banking a
+# verified fragment is the point of a resumable build, so the copy below
+# still runs; the script then exits with the build's own status, so the
+# job is not recorded as a success. Under `set -e` an uncaptured exit 3
+# would skip the copy entirely and throw the banked progress away.
+BUILD_STATUS=0
 python3 tools/build_terrain.py --band dsm --minzoom 0 --maxzoom 14 \
   --workers 64 --db-path "$SCRATCH" \
-  --output "$SCRATCH/gem-15-dsm-terrarium.pmtiles"
+  --output "$SCRATCH/gem-15-dsm-terrarium.pmtiles" || BUILD_STATUS=$?
+if [ "$BUILD_STATUS" -ne 0 ]; then
+  echo "build_terrain.py exited $BUILD_STATUS; read its build summary above." >&2
+  echo "Promoting whatever it produced anyway, then failing the job." >&2
+fi
 
 SRC="$SCRATCH/gem-15-dsm-terrarium.pmtiles"
 rsync -a "$SRC" "$DEST"
@@ -245,6 +258,10 @@ echo "verified: $DEST matches $SRC (sha256 $DEST_SHA)"
 # another (which is also why there is no `trap ... EXIT rm -rf` anywhere
 # in this script -- see below).
 rm -rf "$SCRATCH"
+
+# The artifact is banked and verified. Now report the build's own verdict:
+# 0 complete, 1 a --verify mismatch, 3 a partial archive to resume.
+exit "$BUILD_STATUS"
 EOF
 ```
 
@@ -384,10 +401,10 @@ python3 tools/build_terrain.py --band dsm --minzoom 0 --maxzoom 14 \
 including its copy/verify/cleanup sequence after this command: `--output`
 above is deliberately scratch-local too, not the final published path
 directly, per that section's "Artifact integrity" note). This
-is the expensive step, and the one the first attempt at it on the real
-cluster found three serious defects in -- all three are fixed as of this
-revision of `tools/build_terrain.py`; read its module docstring for the
-full design, this section is the operational summary and the honest cost
+is the expensive step, and the one every real attempt at it on the
+cluster has found defects in -- all of them are fixed as of this revision
+of `tools/build_terrain.py`; read its module docstring for the full
+design, this section is the operational summary and the honest cost
 estimate.
 
 ### What the real run found, and what changed
@@ -437,6 +454,54 @@ estimate.
    existing database from an older version of this script is migrated
    (deduplicated, keeping the latest value per name) the first time it is
    opened by this version.
+
+The first **global z0-z14** run (13,485 cells, 32 workers, 200 GB) then
+found three more, at a scale no earlier validation had reached:
+
+5. **P0: the per-zoom setup cost scaled with the requested scope, not with
+   concurrency.** `build_zoom_rewarp` materialized one `mercantile.Tile`
+   object per cell per tile plus one contributor-count dict entry per
+   tile, for the whole requested area, before any raster I/O. Measured
+   against the real cell list at global z14 (13,485 cells, 42.138M
+   cell-tile contributions over 40.753M distinct tiles): **213.7 bytes per
+   contribution, so 9.0 GB**, held for the entire zoom. The resume skip
+   list added 151.6 bytes per already-built tile (0.42 GB at the 2.78M
+   tiles that run had banked, 6.2 GB for a complete zoom), and the first
+   derive step's child set added about 6 GB more. Against a validated
+   steady state of ~131 GiB at 32 workers this is what pushed the job over
+   its 200 GB limit; it was invisible in every earlier test because those
+   ran on 1-99 cells. **Fixed**: a cell's tile set is four integers
+   (`cell_tile_rect`), the contributor count is derived one cell at a time
+   from integer rect intersections as that cell is admitted, and every
+   per-tile set is a packed-key numpy array at 8 bytes per tile.
+   **Measured after**, at the same real global z14 scope, not
+   extrapolated: **3.8 MB** of upfront structures (9.6 MB RSS), 0.2 s to
+   build, 165.6 KB transient per in-flight cell (21.2 MB for a 128-cell
+   window), and 22.2 MB of skip list at the banked resume point (326 MB
+   for a complete zoom). The remaining in-flight cost is the one that was
+   always meant to be there: the fetch window, plus the open
+   shared-boundary tiles, which peak at **9,401 tiles (2.46 GB)** under
+   the real admission order and drain to zero. The per-zoom progress line
+   reports that backlog as `pending (peak N)`.
+6. **An interrupted run's metadata claimed the whole requested range.**
+   `minzoom`/`maxzoom` were written once, at the start, from
+   `--minzoom`/`--maxzoom`, so the 9.6% fragment that survived the kill
+   advertised z0-z14 while holding only z14. **Fixed**: both values are
+   written from the zoom levels the `tiles` table actually holds, on every
+   commit as well as at the end, so even a `kill -9` leaves a fragment
+   that describes itself.
+7. **The closing summary read as a clean completion.** Per-cell failures
+   were warnings far up the log, the last lines were a tile count and a
+   file size with nothing to compare them against, and the exit status was
+   0 -- so the job script promoted a fragment as a finished archive.
+   **Fixed**: every run ends with cells completed against cells requested,
+   zoom levels wanted against zoom levels built, per-zoom tile counts read
+   from the archive itself, and an explicit `PARTIAL` line with **exit code
+   3** when the archive does not cover the request. Promoting a verified
+   fragment anyway is still correct -- that is what banking progress means
+   -- which is why the sbatch shape in "Compute" above captures the status
+   and exits with it after the copy, rather than letting `set -e` skip the
+   copy and throw the banked work away.
 
 ### `--overview-mode`: average (new default) vs. rewarp (the original design)
 
@@ -525,11 +590,17 @@ estimate: ~2.5-4 hours for the full z0-z14 global build on one
 pre-patch 1.5-6 hours, and still pending the operator's own timing pass on
 the real cluster with the patched code.
 
-**Memory:** the per-zoom "tiles remaining" count (`--maxzoom`'s rewarp
-stage) and the fetch window (2x `--workers` in-flight cell results, each
-139-199 MB at z13) are the two real costs; derivation reads small (256x256)
-tiles from local SQLite and is not a memory concern. 128 GB (the sbatch
-shape above) is generous headroom for both at `--workers 64`.
+**Memory:** the fetch window (2x `--workers` in-flight cell results, each
+139-199 MB at z13 and ~2.05 GiB at z14 as measured on the cluster) is now
+the dominant cost, as it should be: the per-zoom setup structures that
+used to charge 9.0 GB for a global z14 scope regardless of worker count
+charge 3.8 MB after defect 5 above. The other in-flight cost is the open
+shared-boundary tiles, measured at a 9,401-tile (2.46 GB) peak globally.
+Derivation reads small (256x256) tiles from local SQLite and is not a
+memory concern. At `--workers 64` and a 2x window the fetch window alone
+is the figure to budget against; 128 GB (the sbatch shape above) covers it
+at z13, and the validated 32-worker z14 steady state was ~131 GiB, so size
+the `--mem` request from `--workers` and nothing else.
 
 **Resumability**, now accurate post-patch: every `--commit-every-tiles`/
 `--commit-every-seconds` commit is durable (not just once per zoom), a
@@ -539,6 +610,15 @@ missing -- at the tile level for the rewarp stage, and at the derived-tile
 level for every shallower zoom in average mode. `pmtiles convert --force`
 at the end always regenerates the final `.pmtiles` from the MBTiles'
 current state.
+
+An MBTiles written by the pre-defect-5 code resumes under the current code
+unchanged, which matters because the global run's banked progress is
+exactly such a file. **Verified**, not argued: an unpatched build was
+`kill -9`'d at 930 of 1,457 z13 tiles, then resumed with the patched
+script, which reported the 930 as already built, completed the remaining
+527, derived z12-z10, and finished `COMPLETE` with `minzoom`/`maxzoom`
+from built content. The finished archive is byte-identical to one built
+from scratch in one pass.
 
 ### Smoke-tested
 

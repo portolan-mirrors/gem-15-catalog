@@ -81,11 +81,57 @@ whether every contributing cell had actually succeeded or not.
 
 ### Exact-completion compositing, bounded memory and bounded concurrency
 
-Before any raster I/O, ``build_zoom_rewarp`` counts, for every tile not yet
-written, how many cells intersect it (pure bbox math, free). As cells are
-processed that count is decremented **on success only**; a tile is
-terrarium-encoded and written the moment its count reaches zero, then
-dropped from memory.
+``build_zoom_rewarp`` knows, for every tile, how many cells intersect it
+(pure integer rect math, see ``_CellTileIndex``). As cells are processed
+that count is decremented **on success only**; a tile is terrarium-encoded
+and written the moment its count reaches zero, then dropped from memory.
+
+#### Upfront cost scales with concurrency, not scope
+
+That counting used to happen for the *entire* requested scope before any
+raster I/O: one ``mercantile.Tile`` object per cell per tile
+(``cell_tiles``) plus one dict entry per tile (``remaining``). Measured
+against this catalog's real cell list at global z14 -- 13,485 cells,
+42.138M cell-tile contributions over 40.753M distinct tiles -- that is
+213.7 bytes per contribution, so **9.0 GB**, retained for the whole zoom,
+before a single byte was read from GCS. The resume skip list cost another
+151.6 bytes per already-built tile (6.2 GB for a complete zoom), and the
+first derive step's child set cost the same again. None of it was visible
+at the 99-cell slice scale every earlier validation of this script ran at,
+because all of it is proportional to the *requested scope* rather than to
+the concurrency the memory budget was sized for. The real z0-z14 global
+run was OOM-killed at 1,300 of 13,485 cells inside a 200 GB limit whose
+validated steady-state need was ~131 GiB.
+
+So nothing proportional to the scope is materialized up front any more:
+
+- a cell's tile set is four integers (``cell_tile_rect``), because
+  ``mercantile.tiles`` over a bbox is exactly a rectangle;
+- the per-tile contributor count is derived one cell at a time, as that
+  cell is admitted, by intersecting integer rects
+  (``_CellTileIndex.contributor_counts``) -- a few KB per cell, discarded
+  with it;
+- the resume skip list is a sorted numpy array of packed ``(x, y)`` keys,
+  8 bytes per tile instead of 151.6 (``existing_tiles_for_zoom``), tested
+  vectorized over one cell's tiles at a time;
+- the derive stage turns each chunk of child rows straight into parent
+  keys and never holds the child set at all.
+
+Measured replacement cost for the same global z14 scope, not
+extrapolated: **3.8 MB** of upfront structures (1.5 MB of it the cell
+rects themselves), built in 0.2 s, plus 165.6 KB transient per in-flight
+cell, plus the skip list -- 22 MB at the 2.78M tiles the killed run had
+banked, 326 MB for a complete zoom.
+
+What that leaves is the genuinely concurrency-bounded cost: the in-flight
+cell window (below), and the open shared-boundary tiles. A tile only one
+selected cell covers -- 96.7% of them at global z14, measured -- is
+encoded straight off the arriving cell's array and never enters a dict at
+all. The remaining 1.362M shared tiles are held only while some
+contributing cell has delivered and another has not, which under the real
+admission order peaks at **9,401 open tiles (2.46 GB)** and drains to
+zero. That is bounded and reported in the per-zoom progress line
+(``pending (peak N)``), not fixed by scope.
 
 Cell fetches are *not* all submitted to the thread pool at once. A fixed
 in-flight window (``--window-multiplier`` x ``--workers``, default 2x) caps
@@ -258,6 +304,29 @@ resolution (``RELATIVE_TOLERANCE``, ``RELATIVE_TOLERANCE_AVERAGED``); see
 ``verify_mbtiles_tile``'s docstring for why a fixed absolute tolerance does
 not work here.
 
+## A fragment says that it is a fragment
+
+Two things used to let an interrupted run pass for a finished one, and the
+first global run hit both: the ``metadata`` table's ``minzoom``/``maxzoom``
+were written once, at the start, from the *requested* ``--minzoom``/
+``--maxzoom``, so the surviving 9.6% fragment advertised z0-z14 while
+holding only z14 tiles; and the closing summary was a tile count and a
+file size with nothing to compare them against, plus exit status 0, so the
+job script promoted it as a completed archive.
+
+Now ``minzoom``/``maxzoom`` always come from the zoom levels the ``tiles``
+table actually holds (``sync_zoom_metadata``, run on every commit as well
+as at the end, so a ``kill -9`` cannot stand a stale claim up), and
+``log_build_summary`` closes every run with cells completed against cells
+requested, zoom levels wanted against zoom levels built, per-zoom tile
+counts read from the archive, and an explicit ``PARTIAL`` line plus exit
+code ``EXIT_PARTIAL`` whenever the archive does not cover the request.
+Promoting a fragment anyway is correct -- banking progress is the whole
+point of a resumable build -- so the fix is that the artifact and the exit
+status describe themselves, not that the run refuses to hand anything
+over. A job script that promotes on purpose should capture the status
+rather than die on it: RUNBOOK.md's sbatch shape shows the pattern.
+
 ## Output format
 
 An intermediate MBTiles (SQLite) is built first -- resumable tile-by-tile,
@@ -303,6 +372,7 @@ import threading
 import time
 from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
 from pathlib import Path
+from typing import NamedTuple
 
 import mercantile
 import numpy as np
@@ -731,11 +801,18 @@ def log(msg: str) -> None:
 # terrarium codec
 # --------------------------------------------------------------------------
 
+def quantization_step_m(z: int) -> float:
+    """This zoom's vertical quantization step in meters, per Mapterhorn's
+    technique (see the module docstring's step table): 1 m at z0-z11,
+    0.5 m at z12, 0.25 m at z13, 0.125 m at z14."""
+    return min(2.0 ** (FULL_RESOLUTION_ZOOM - z) / 256.0, 1.0)
+
+
 def quantize_elevation(elevation_m: np.ndarray, z: int) -> np.ndarray:
     """Round elevation to this zoom's step, per Mapterhorn's technique (see
     module docstring). A no-op is also fine: pass --no-quantize through, or
     call with elevation already at the right precision."""
-    factor = min(2.0 ** (FULL_RESOLUTION_ZOOM - z) / 256.0, 1.0)
+    factor = quantization_step_m(z)
     return (np.round(elevation_m / factor) * factor).astype(np.float32)
 
 
@@ -800,6 +877,101 @@ def unpack_mask(data: bytes) -> np.ndarray:
 
 
 # --------------------------------------------------------------------------
+# tile keys and cell tile rects
+#
+# The compact replacements for the per-tile Python objects the per-zoom
+# setup used to materialize for the whole requested scope. See the module
+# docstring's "Upfront cost scales with concurrency, not scope" section for
+# the measured numbers these exist for.
+# --------------------------------------------------------------------------
+
+#: Packed (x, y) tile key: x in the high 32 bits of an int64. Tile indices
+#: reach 2^14 at z14 and 2^30 at z30, so 32 bits per axis is ample. Every
+#: structure that used to hold one (x, y) tuple per tile holds one of these
+#: in a numpy array instead.
+_XY_SHIFT = 32
+_XY_MASK = (1 << _XY_SHIFT) - 1
+
+#: Rows pulled from the `tiles` table per fetchmany while packing keys.
+#: Bounds the transient list-of-tuples each step allocates to roughly
+#: 28 MB regardless of how many tiles the zoom holds.
+_TILE_SCAN_CHUNK = 250_000
+
+
+def pack_xy(x: int, y: int) -> int:
+    return (int(x) << _XY_SHIFT) | int(y)
+
+
+def unpack_xy(key: int) -> tuple[int, int]:
+    return int(key) >> _XY_SHIFT, int(key) & _XY_MASK
+
+
+def cell_tile_rect(bbox, z: int) -> tuple[int, int, int, int]:
+    """``(xmin, xmax, ymin, ymax)`` of ``mercantile.tiles(*bbox, [z])``.
+
+    ``mercantile.tiles`` yields the *complete* rectangle
+    ``range(ul.x, lr.x + 1) x range(ul.y, lr.y + 1)`` for one bbox (read
+    from mercantile 1.2.1's own source), so these four integers carry
+    exactly the same information as the materialized tile list -- 4 ints
+    per cell instead of one ``Tile`` object per tile, which is the whole
+    point: at global z14 the materialized form measured 213.7 bytes per
+    cell-tile contribution, 9.0 GB over the 42.1M contributions of the
+    full scope.
+
+    This reproduces mercantile's own computation -- its clamps, and its
+    ``LL_EPSILON`` nudge on the south/east edges -- rather than
+    re-deriving the tile/degree relationship independently. That matters
+    more than it looks: an off-by-one against mercantile here either
+    leaves a tile's contributor count permanently above zero (the tile is
+    then never written at all) or drops a contributor (the shared-boundary
+    seam bug this catalog has already paid for once -- see the module
+    docstring's sharded-runs warning). Verified equal to ``min``/``max``
+    over the real ``mercantile.tiles`` output for 409 real cells x
+    z{0,5,9,13,14}, 0 mismatches, and ``tests`` in this repo keep that
+    check.
+
+    A bbox with ``west > east`` (antimeridian-crossing, which
+    ``mercantile.tiles`` handles by splitting into two bboxes) is not a
+    rectangle in tile space and is rejected rather than silently
+    mis-counted. No GEM-15 cell crosses the antimeridian: a cell id
+    always names its own west edge and the east edge is west + 1.
+    """
+    west, south, east, north = bbox
+    if west > east:
+        raise ValueError(
+            f"cell_tile_rect does not support an antimeridian-crossing bbox "
+            f"{bbox!r}: its tiles are not one rectangle"
+        )
+    w = max(-180.0, west)
+    s = max(-85.051129, south)
+    e = min(180.0, east)
+    n = min(85.051129, north)
+    ul = mercantile.tile(w, n, z)
+    lr = mercantile.tile(e - mercantile.LL_EPSILON, s + mercantile.LL_EPSILON, z)
+    return ul.x, lr.x, ul.y, lr.y
+
+
+def rect_keys(rect: tuple[int, int, int, int]) -> np.ndarray:
+    """Packed tile keys for every tile in `rect`, shaped (nx, ny) so a
+    caller can index it by ``(x - xmin, y - ymin)``."""
+    x0, x1, y0, y1 = rect
+    xs = np.arange(x0, x1 + 1, dtype=np.int64)
+    ys = np.arange(y0, y1 + 1, dtype=np.int64)
+    return (xs[:, None] << _XY_SHIFT) | ys[None, :]
+
+
+def keys_present(sorted_keys: np.ndarray, keys: np.ndarray) -> np.ndarray:
+    """Boolean mask, shaped like `keys`: which of `keys` appear in
+    `sorted_keys` (which must be sorted and unique, as
+    ``existing_tiles_for_zoom`` returns)."""
+    if sorted_keys.size == 0:
+        return np.zeros(keys.shape, dtype=bool)
+    pos = np.searchsorted(sorted_keys, keys)
+    np.clip(pos, 0, sorted_keys.size - 1, out=pos)
+    return sorted_keys[pos] == keys
+
+
+# --------------------------------------------------------------------------
 # MBTiles
 # --------------------------------------------------------------------------
 
@@ -849,7 +1021,16 @@ def open_mbtiles(path: Path) -> sqlite3.Connection:
         " mask BLOB,"
         " PRIMARY KEY (zoom_level, tile_column, tile_row))"
     )
-    conn.execute("CREATE TABLE IF NOT EXISTS metadata (name TEXT, value TEXT)")
+    # PRIMARY KEY(name) is what makes set_mbtiles_metadata's "INSERT OR
+    # REPLACE" replace rather than append. _migrate_metadata_table adds it
+    # to a database that predates it; declaring it here means a database
+    # this version creates does not need migrating at all, which is what
+    # that function's docstring has always said and what this CREATE did
+    # not actually do (every fresh build logged a migration it should not
+    # have needed).
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS metadata (name TEXT PRIMARY KEY, value TEXT)"
+    )
     conn.commit()
     _migrate_metadata_table(conn)
     return conn
@@ -977,12 +1158,104 @@ def set_mbtiles_metadata(conn: sqlite3.Connection, **kv) -> None:
     conn.commit()
 
 
-def existing_tiles_for_zoom(conn: sqlite3.Connection, z: int) -> set[tuple[int, int]]:
-    rows = conn.execute(
+def existing_tiles_for_zoom(conn: sqlite3.Connection, z: int) -> np.ndarray:
+    """Sorted, unique packed (``pack_xy``) keys of every tile already
+    written at zoom z -- the resume skip list.
+
+    Returns a numpy int64 array, not a ``set`` of ``(x, y)`` tuples.
+    Measured at global z14 scale, a set of tuples costs 151.6 bytes per
+    tile (6.2 GB for a complete 40.75M-tile zoom, 0.42 GB at the 2.78M
+    tiles the real run had banked when it was OOM-killed) against 8 bytes
+    per tile here; and the old ``.fetchall()`` materialized a second list
+    of 40.75M tuples before the set even started. The row count is read
+    first so the array is allocated once at its final size rather than
+    grown by concatenation, which would double the peak.
+
+    Callers test membership with ``keys_present``, vectorized over one
+    cell's (or one parent tile's) keys at a time.
+    """
+    total = conn.execute(
+        "SELECT count(*) FROM tiles WHERE zoom_level = ?", (z,)
+    ).fetchone()[0]
+    if not total:
+        return np.empty(0, dtype=np.int64)
+    flip = (1 << z) - 1  # TMS row -> XYZ y
+    keys = np.empty(int(total), dtype=np.int64)
+    cur = conn.execute(
         "SELECT tile_column, tile_row FROM tiles WHERE zoom_level = ?", (z,)
-    ).fetchall()
-    n = (1 << z)
-    return {(col, (n - 1) - row) for col, row in rows}
+    )
+    filled = 0
+    while True:
+        rows = cur.fetchmany(_TILE_SCAN_CHUNK)
+        if not rows:
+            break
+        a = np.array(rows, dtype=np.int64)
+        packed = (a[:, 0] << _XY_SHIFT) | (flip - a[:, 1])
+        if filled + packed.size > keys.size:
+            # The table grew between the count and the scan. It cannot in
+            # this script (both run single-threaded, before any worker
+            # pool starts), but truncating the resume skip list would
+            # silently rebuild and overwrite finished tiles, so handle it
+            # rather than assume it.
+            keys = np.concatenate([keys[:filled], packed])
+            filled = keys.size
+            continue
+        keys[filled:filled + packed.size] = packed
+        filled += packed.size
+    keys = keys[:filled]
+    keys.sort()
+    return keys
+
+
+def tile_counts_by_zoom(conn: sqlite3.Connection) -> dict[int, int]:
+    """``{zoom: tile count}`` for everything actually in the archive.
+
+    The authoritative answer to "what did this build produce", read from
+    the tiles table rather than from what the run was asked for -- see
+    ``log_build_summary``.
+    """
+    return {
+        int(z): int(n)
+        for z, n in conn.execute(
+            "SELECT zoom_level, count(*) FROM tiles "
+            "GROUP BY zoom_level ORDER BY zoom_level"
+        )
+    }
+
+
+def sync_zoom_metadata(conn: sqlite3.Connection) -> tuple[int | None, int | None]:
+    """Set the ``metadata`` table's ``minzoom``/``maxzoom`` from the zoom
+    levels the ``tiles`` table actually holds. Returns them, or
+    ``(None, None)`` if there are no tiles yet.
+
+    These two values used to be written once, at the start, from the
+    *requested* ``--minzoom``/``--maxzoom``. On the real global run that
+    made the surviving fragment claim z0-z14 while holding only z14
+    tiles: a consumer reading the metadata (or a ``pmtiles show``) was
+    told about 15 zoom levels that did not exist. Writing them from built
+    content instead means the claim is true whenever it is read --
+    including after a kill, because this runs on every commit (see
+    ``CommitScheduler.flush``), so the fragment on disk is never more
+    than one commit interval stale.
+
+    ``min()`` and ``max()`` are issued as two separate statements on
+    purpose: SQLite optimizes a lone ``min``/``max`` over an indexed
+    column into an index seek, but not two aggregates in one query, which
+    would scan all 40M+ rows on every commit.
+    """
+    lo = conn.execute("SELECT min(zoom_level) FROM tiles").fetchone()[0]
+    if lo is None:
+        return None, None
+    hi = conn.execute("SELECT max(zoom_level) FROM tiles").fetchone()[0]
+    conn.execute(
+        "INSERT OR REPLACE INTO metadata (name, value) VALUES ('minzoom', ?)",
+        (str(int(lo)),),
+    )
+    conn.execute(
+        "INSERT OR REPLACE INTO metadata (name, value) VALUES ('maxzoom', ?)",
+        (str(int(hi)),),
+    )
+    return int(lo), int(hi)
 
 
 def write_tile(
@@ -1041,6 +1314,13 @@ class CommitScheduler:
     comes first -- not once per zoom. On the real build, the only commit
     being once-per-zoom meant a killed process rolled back everything since
     the last zoom boundary (measured: 2.8 GB and 927 MB lost on two kills).
+
+    Every commit also refreshes the archive's ``minzoom``/``maxzoom``
+    metadata from the tiles actually present (``sync_zoom_metadata``), in
+    the same transaction as the tiles it is committing. That is what keeps
+    a killed run's fragment self-describing instead of claiming the whole
+    requested zoom range; the two index seeks it costs are nothing against
+    a 20,000-tile commit.
     """
 
     def __init__(self, conn: sqlite3.Connection, every_tiles: int, every_seconds: float):
@@ -1058,6 +1338,7 @@ class CommitScheduler:
 
     def flush(self) -> None:
         if self.since_commit:
+            sync_zoom_metadata(self.conn)
             self.conn.commit()
             self.since_commit = 0
             self.last_commit = time.time()
@@ -1088,13 +1369,13 @@ def render_cell_block(
     """
     from osgeo import gdal
 
-    tiles = list(mercantile.tiles(*cell.bbox, [z]))
-    if not tiles:
+    # One rect, from the one definition build_zoom_rewarp's contributor
+    # counting also uses (cell_tile_rect): the warp grid below and that
+    # count must describe the same tile set or a tile is either never
+    # finalized or finalized a contributor short.
+    txmin, txmax, tymin, tymax = cell_tile_rect(cell.bbox, z)
+    if txmin > txmax or tymin > tymax:
         return {}
-    xs = [t.x for t in tiles]
-    ys = [t.y for t in tiles]
-    txmin, txmax = min(xs), max(xs)
-    tymin, tymax = min(ys), max(ys)
     left, _, _, top = mercantile.xy_bounds(txmin, tymin, z)
     _, bottom, right, _ = mercantile.xy_bounds(txmax, tymax, z)
     width = (txmax - txmin + 1) * TILE_SIZE
@@ -1122,10 +1403,12 @@ def render_cell_block(
             if fill_voids:
                 arr = fill_voids_from_glo30(arr, cell, left, bottom, right, top, width, height)
             out = {}
-            for t in tiles:
-                col0 = (t.x - txmin) * TILE_SIZE
-                row0 = (t.y - tymin) * TILE_SIZE
-                out[(t.x, t.y)] = arr[row0: row0 + TILE_SIZE, col0: col0 + TILE_SIZE].copy()
+            for tx in range(txmin, txmax + 1):
+                col0 = (tx - txmin) * TILE_SIZE
+                for ty in range(tymin, tymax + 1):
+                    row0 = (ty - tymin) * TILE_SIZE
+                    out[(tx, ty)] = arr[row0: row0 + TILE_SIZE,
+                                        col0: col0 + TILE_SIZE].copy()
             return out
         except Exception as exc:  # noqa: BLE001 - any failure here is retryable
             last_exc = exc
@@ -1195,6 +1478,122 @@ def run_bounded(items, submit, on_result, workers: int, window: int) -> None:
 # zoom build: rewarp from source
 # --------------------------------------------------------------------------
 
+class RewarpResult(NamedTuple):
+    written: int
+    already: int
+    #: The cells whose source read failed this run, by id -- not just a
+    #: count, so --overview-mode rewarp (which fetches every cell again at
+    #: every zoom) can report how many DISTINCT cells failed overall
+    #: instead of summing the same cell once per zoom.
+    failed_cell_ids: tuple[str, ...]
+    cells_admitted: int
+    unfinished_shared: int
+
+    @property
+    def failed_cells(self) -> int:
+        return len(self.failed_cell_ids)
+
+
+class _CellTileIndex:
+    """Per-zoom, per-cell tile bookkeeping, computed one cell at a time.
+
+    This replaces the two structures the per-zoom setup used to build for
+    the entire requested scope before any raster I/O: ``cell_tiles``
+    (one ``mercantile.Tile`` object per cell per tile) and ``remaining``
+    (one dict entry per tile). Measured at real global z14 scope -- 13,485
+    cells, 42.138M cell-tile contributions over 40.753M distinct tiles --
+    those two cost 213.7 bytes per contribution, so 9.0 GB, retained for
+    the whole zoom and invisible at the 99-cell scale every earlier
+    validation ran at. This index holds 4 integers per cell instead:
+    1.5 MB of rects for the same global scope, 3.8 MB including the
+    admission pass, built in 0.2 s.
+
+    What it keeps:
+
+    ``rect`` per cell
+        ``cell_tile_rect``, so a cell's tile set is a rectangle, not a
+        list.
+    ``done_keys``
+        one sorted packed-key array for the whole zoom (8 bytes/tile, the
+        only genuinely scope-proportional structure left; 326 MB at a
+        complete global z14, 22 MB at the 2.78M tiles the OOM-killed run
+        had banked).
+
+    What it computes on demand, per cell, as that cell is admitted:
+
+    ``done_mask(i)``
+        which of cell i's tiles an earlier run already wrote.
+    ``contributor_counts(i)``
+        how many selected cells cover each of cell i's tiles -- the
+        number ``remaining`` used to hold per tile. Derived by
+        intersecting integer rects, not by any lon/lat test: a float
+        comparison at a cell boundary that disagreed with
+        ``mercantile.tiles`` by one tile would reintroduce the
+        shared-boundary seam bug (23 shared z13 tiles per 1-degree
+        boundary) or strand a tile at a count that never reaches zero.
+
+    Both are a few KB per cell and are discarded with it.
+    """
+
+    def __init__(self, cells, z: int, done_keys: np.ndarray):
+        self.cells = cells
+        self.z = z
+        self.done_keys = done_keys
+        self.rects = [cell_tile_rect(c.bbox, z) for c in cells]
+        n = len(self.rects)
+        self._x0 = np.fromiter((r[0] for r in self.rects), dtype=np.int64, count=n)
+        self._x1 = np.fromiter((r[1] for r in self.rects), dtype=np.int64, count=n)
+        self._y0 = np.fromiter((r[2] for r in self.rects), dtype=np.int64, count=n)
+        self._y1 = np.fromiter((r[3] for r in self.rects), dtype=np.int64, count=n)
+
+    def done_mask(self, i: int) -> np.ndarray:
+        """(nx, ny) bool: cell i's tiles that are already in the MBTiles."""
+        return keys_present(self.done_keys, rect_keys(self.rects[i]))
+
+    def todo_count(self, i: int) -> int:
+        x0, x1, y0, y1 = self.rects[i]
+        area = (x1 - x0 + 1) * (y1 - y0 + 1)
+        if self.done_keys.size == 0:
+            return int(area)
+        return int(area - np.count_nonzero(self.done_mask(i)))
+
+    def contributor_counts(self, i: int) -> np.ndarray:
+        """(nx, ny) int32: how many selected cells cover each tile of cell
+        i's rect, counting cell i itself. Exactly the count the old
+        ``remaining`` dict held for those tiles."""
+        x0, x1, y0, y1 = self.rects[i]
+        nx, ny = x1 - x0 + 1, y1 - y0 + 1
+        ox0 = np.maximum(self._x0, x0)
+        ox1 = np.minimum(self._x1, x1)
+        oy0 = np.maximum(self._y0, y0)
+        oy1 = np.minimum(self._y1, y1)
+        hit = np.nonzero((ox0 <= ox1) & (oy0 <= oy1))[0]
+        counts = np.zeros((nx, ny), dtype=np.int32)
+        # Two ways to accumulate the same thing. Adding 1 over each
+        # overlapping cell's intersection sub-block costs one numpy slice
+        # per overlapping cell, which is what deep zooms want (at z14 a
+        # cell overlaps at most its 8 neighbours). At a zoom shallow
+        # enough that one tile spans many degrees, every cell overlaps
+        # every other one but the rect itself is tiny, so testing each of
+        # this rect's few tiles against all the intersections at once is
+        # the cheap direction instead. Picking by size keeps either
+        # regime from degenerating.
+        if nx * ny <= hit.size:
+            for ix in range(nx):
+                x = x0 + ix
+                in_x = (ox0 <= x) & (x <= ox1)
+                for iy in range(ny):
+                    y = y0 + iy
+                    counts[ix, iy] = np.count_nonzero(
+                        in_x & (oy0 <= y) & (y <= oy1)
+                    )
+        else:
+            for j in hit:
+                counts[int(ox0[j]) - x0: int(ox1[j]) - x0 + 1,
+                       int(oy0[j]) - y0: int(oy1[j]) - y0 + 1] += 1
+        return counts
+
+
 def build_zoom_rewarp(
     z: int,
     cells,
@@ -1208,30 +1607,51 @@ def build_zoom_rewarp(
     committer: CommitScheduler,
     fill_voids: bool = True,
     tile_format: str = "png",
-) -> tuple[int, int, int]:
-    """Returns (written, already_done, failed_cell_count)."""
-    done = set() if force else existing_tiles_for_zoom(conn, z)
+) -> RewarpResult:
+    """Build zoom z by warping every selected cell from source.
 
-    cell_tiles: dict = {}
-    remaining: dict[tuple[int, int], int] = {}
-    for cell in cells:
-        tiles = [t for t in mercantile.tiles(*cell.bbox, [z]) if (t.x, t.y) not in done]
-        if not tiles:
-            continue
-        cell_tiles[cell] = tiles
-        for t in tiles:
-            remaining[(t.x, t.y)] = remaining.get((t.x, t.y), 0) + 1
+    Nothing proportional to the requested scope is materialized before the
+    raster I/O starts: see ``_CellTileIndex`` for what replaced the old
+    per-zoom ``cell_tiles``/``remaining`` dicts and why.
+    """
+    done_keys = np.empty(0, dtype=np.int64) if force else existing_tiles_for_zoom(conn, z)
+    n_done = int(done_keys.size)
+    index = _CellTileIndex(cells, z, done_keys)
 
-    if not remaining:
-        log(f"z{z}: nothing to do ({len(done)} tile(s) already built)")
-        return 0, len(done), 0
+    # Admission list: the cells with at least one tile still to build, in
+    # the order `cells` gives them -- the same cells, in the same order,
+    # the old `cell_tiles` dict yielded (a dict preserves insertion
+    # order, and it was filled by iterating `cells`). Ordering is
+    # load-bearing: it decides which cell's value lands first in a shared
+    # boundary tile.
+    admitted: list[int] = []
+    contributions = 0
+    for i in range(len(cells)):
+        n = index.todo_count(i)
+        if n:
+            admitted.append(i)
+            contributions += n
 
-    log(f"z{z}: {len(remaining)} tile(s) to build from {len(cell_tiles)} "
-        f"cell(s) ({len(done)} already built)")
+    if not admitted:
+        log(f"z{z}: nothing to do ({n_done} tile(s) already built)")
+        return RewarpResult(0, n_done, (), 0, 0)
 
-    accum: dict[tuple[int, int], np.ndarray] = {}
+    log(f"z{z}: {len(admitted)} cell(s) to fetch, up to {contributions} "
+        f"cell-tile contribution(s) to build ({n_done} tile(s) already "
+        f"built). A tile shared by adjacent cells is counted once per "
+        f"contributing cell here; the build summary reports the true "
+        f"tile counts from the archive.")
+
+    # One entry per *shared* boundary tile that is open right now: a tile
+    # at least one contributing cell has delivered and at least one has
+    # not. A tile only one selected cell covers -- 96.7% of them at
+    # global z14, measured -- is encoded straight off the arriving cell's
+    # own array and never enters this dict. Each entry is
+    # [contributions still owed, accumulated array].
+    pending: dict[tuple[int, int], list] = {}
+    pending_high = 0
     written = 0
-    failed_cells = 0
+    failed_cell_ids: list[str] = []
     pending_encode: list = []
     t0 = time.time()
     done_n = 0
@@ -1260,20 +1680,21 @@ def build_zoom_rewarp(
             ef = encode_pool.submit(lambda e=elev: encode_tile_bytes(encode_terrarium(e), tile_format))
             pending_encode.append((ef, xy))
 
-        def finalize(xy: tuple[int, int]) -> None:
-            arr = accum.pop(xy, None)
+        def finalize(xy: tuple[int, int], arr: np.ndarray | None) -> None:
             if arr is None:
                 arr = np.full((TILE_SIZE, TILE_SIZE), np.nan, dtype=np.float32)
             void = np.isnan(arr)
             elev = np.where(void, 0.0, arr).astype(np.float32)
             submit_encode(xy, elev, void)
 
-        def submit_fetch(cell):
+        def submit_fetch(i: int):
+            cell = cells[i]
             url = cell.dsm_url if band == "dsm" else cell.dtm_url
             return _fetch_cell_safe(cell, z, url, fill_voids=fill_voids)
 
-        def on_result(cell, fut) -> None:
-            nonlocal done_n, failed_cells
+        def on_result(i: int, fut) -> None:
+            nonlocal done_n, pending_high
+            cell = cells[i]
             done_n += 1
             try:
                 _, blocks = fut.result()
@@ -1283,36 +1704,60 @@ def build_zoom_rewarp(
                 blocks = None
 
             if blocks is None:
-                failed_cells += 1
-                # Deliberately do NOT touch `remaining` for this cell's
-                # tiles: they stay above zero and are simply never
-                # finalized this run. See "Fetch failures never bake in
-                # ocean" in the module docstring.
+                failed_cell_ids.append(cell.cell_id)
+                # Deliberately do NOT decrement anything for this cell's
+                # tiles: a shared tile keeps owing this cell's
+                # contribution and is simply never finalized this run,
+                # and a tile only this cell covers is never written at
+                # all. See "Fetch failures never bake in ocean" in the
+                # module docstring.
             else:
+                x0, _x1, y0, _y1 = index.rects[i]
+                counts = index.contributor_counts(i)
+                already = index.done_mask(i)
                 for xy, arr in blocks.items():
-                    if xy not in remaining:
+                    ix, iy = xy[0] - x0, xy[1] - y0
+                    if already[ix, iy]:
+                        continue  # an earlier run already wrote this tile
+                    owed = int(counts[ix, iy])
+                    if owed <= 1:
+                        # The only selected cell covering this tile is
+                        # this one, so it is complete on arrival. The old
+                        # code merged it into a fresh all-NaN array
+                        # first, which produces exactly these bytes: the
+                        # merge is "take arr wherever arr is not NaN",
+                        # and the NaN it leaves behind becomes 0 in
+                        # finalize either way.
+                        finalize(xy, arr)
                         continue
-                    cur = accum.get(xy)
-                    if cur is None:
-                        cur = np.full((TILE_SIZE, TILE_SIZE), np.nan, dtype=np.float32)
-                        accum[xy] = cur
+                    ent = pending.get(xy)
+                    if ent is None:
+                        # First contribution to a shared tile. Taking
+                        # this array as the accumulator is identical to
+                        # merging it into an all-NaN one, and saves the
+                        # allocation.
+                        pending[xy] = [owed - 1, arr]
+                        continue
+                    cur = ent[1]
                     fill = np.isnan(cur) & ~np.isnan(arr)
                     cur[fill] = arr[fill]
-                    remaining[xy] -= 1
-                    if remaining[xy] <= 0:
-                        finalize(xy)
-                        del remaining[xy]
+                    ent[0] -= 1
+                    if ent[0] <= 0:
+                        del pending[xy]
+                        finalize(xy, cur)
+                if len(pending) > pending_high:
+                    pending_high = len(pending)
 
             drain_ready_encodes()
-            if done_n % 50 == 0 or done_n == len(cell_tiles):
+            if done_n % 50 == 0 or done_n == len(admitted):
                 rate = done_n / max(time.time() - t0, 1e-6)
-                log(f"  z{z}: {done_n}/{len(cell_tiles)} cells ({rate:.2f}/s), "
-                    f"{written} tile(s) written, {len(accum)} pending, "
-                    f"{len(pending_encode)} encoding, {failed_cells} cell "
-                    f"failure(s)")
+                log(f"  z{z}: {done_n}/{len(admitted)} cells ({rate:.2f}/s), "
+                    f"{written} tile(s) written, {len(pending)} pending "
+                    f"(peak {pending_high}), {len(pending_encode)} encoding, "
+                    f"{len(failed_cell_ids)} cell failure(s)")
 
         window = max(window_multiplier * workers, 1)
-        run_bounded(list(cell_tiles.keys()), submit_fetch, on_result, workers, window)
+        run_bounded(admitted, submit_fetch, on_result, workers, window)
 
         # Drain whatever encodes are still outstanding, blocking this time.
         for ef, xy in pending_encode:
@@ -1322,10 +1767,17 @@ def build_zoom_rewarp(
             committer.tick()
 
     committer.flush()
-    if remaining:
-        log(f"  z{z}: {len(remaining)} tile(s) could not be completed this "
-            f"run ({failed_cells} cell failure(s)); rerun to retry")
-    return written, len(done), failed_cells
+    if pending or failed_cell_ids:
+        log(f"  z{z}: {len(failed_cell_ids)} cell(s) failed and {len(pending)} "
+            f"shared boundary tile(s) are still waiting on one; neither is "
+            f"written. Rerun to retry -- it only redoes what is missing.")
+    return RewarpResult(
+        written=written,
+        already=n_done,
+        failed_cell_ids=tuple(failed_cell_ids),
+        cells_admitted=len(admitted),
+        unfinished_shared=len(pending),
+    )
 
 
 # --------------------------------------------------------------------------
@@ -1360,26 +1812,53 @@ def derive_zoom_from_child(
     quantize: bool,
     committer: CommitScheduler,
     tile_format: str = "png",
-) -> tuple[int, int]:
+) -> tuple[int, int, int]:
     """Build zoom z purely from the already-built zoom child_z (= z+1) in
     the same MBTiles -- no source reads, no network. Returns (written,
-    already_done)."""
-    done = set() if force else existing_tiles_for_zoom(conn, z)
+    already_done, failed_parents).
 
-    child_rows = conn.execute(
+    The parent list is derived through packed-key numpy arrays rather than
+    sets of ``(x, y)`` tuples, for the same reason
+    ``existing_tiles_for_zoom`` is: the first derive step of a global
+    build reads 40.75M z14 rows, and the old ``.fetchall()`` plus
+    ``child_xy`` set measured ~151 bytes per child tile -- about 6 GB of
+    scope-proportional cost, on top of the ~9 GB the z14 rewarp stage had
+    already been charging. Deduplicating each chunk of children to its
+    parents as it arrives keeps the peak at the parent count (82 MB at
+    z13, 8 bytes/tile) plus one chunk.
+    """
+    done_keys = np.empty(0, dtype=np.int64) if force else existing_tiles_for_zoom(conn, z)
+    n_done = int(done_keys.size)
+
+    flip = (1 << child_z) - 1  # TMS row -> XYZ y
+    cur = conn.execute(
         "SELECT tile_column, tile_row FROM tiles WHERE zoom_level = ?", (child_z,)
-    ).fetchall()
-    n_child = 1 << child_z
-    child_xy = {(col, (n_child - 1) - row) for col, row in child_rows}
-    parents = {(cx // 2, cy // 2) for cx, cy in child_xy} - done
+    )
+    chunks: list[np.ndarray] = []
+    while True:
+        rows = cur.fetchmany(_TILE_SCAN_CHUNK)
+        if not rows:
+            break
+        a = np.array(rows, dtype=np.int64)
+        # The standard XYZ 2x2 pyramid relationship: a child's parent is
+        # (x // 2, y // 2). Both are non-negative, so >> 1 is // 2.
+        chunks.append(np.unique(
+            ((a[:, 0] >> 1) << _XY_SHIFT) | ((flip - a[:, 1]) >> 1)
+        ))
+    parent_keys = (
+        np.unique(np.concatenate(chunks)) if chunks else np.empty(0, dtype=np.int64)
+    )
+    if parent_keys.size and n_done:
+        parent_keys = parent_keys[~keys_present(done_keys, parent_keys)]
+    n_parents = int(parent_keys.size)
 
-    if not parents:
+    if not n_parents:
         log(f"z{z}: nothing to derive from z{child_z} "
-            f"({len(done)} tile(s) already built)")
-        return 0, len(done)
+            f"({n_done} tile(s) already built)")
+        return 0, n_done, 0
 
-    log(f"z{z}: deriving {len(parents)} tile(s) from z{child_z} "
-        f"({len(done)} already built)")
+    log(f"z{z}: deriving {n_parents} tile(s) from z{child_z} "
+        f"({n_done} already built)")
 
     written = 0
     t0 = time.time()
@@ -1441,23 +1920,33 @@ def derive_zoom_from_child(
                    encode_tile_bytes(encode_terrarium(elev), tile_format), void)
         written += 1
         committer.tick()
-        if done_n % 500 == 0 or done_n == len(parents):
+        if done_n % 500 == 0 or done_n == n_parents:
             rate = done_n / max(time.time() - t0, 1e-6)
-            log(f"  z{z}: {done_n}/{len(parents)} tile(s) derived ({rate:.1f}/s)")
+            log(f"  z{z}: {done_n}/{n_parents} tile(s) derived ({rate:.1f}/s)")
 
     # derive_one runs in run_bounded's own worker threads and only *reads*
     # -- via read_child/read_tile_and_mask's own private, per-thread,
     # read-only connection (get_read_connection), never the shared writer
     # `conn` above. on_result, which does the only writing, runs on the
     # thread driving run_bounded's wait() loop.
+    # The parent tiles are handed to run_bounded as a generator over the
+    # packed-key array, so only the in-flight window's worth of (x, y)
+    # tuples exists at a time instead of a 10.2M-element list. Each
+    # parent tile is independent (it reads 4 children and writes only
+    # itself), so this iterates in packed-key order where the old code
+    # iterated a set's hash order -- a different order, identical output.
+    def parents_in_order():
+        for key in parent_keys:
+            yield unpack_xy(key)
+
     window = max(4 * workers, 1)
-    run_bounded(list(parents), derive_one, on_result, workers, window)
+    run_bounded(parents_in_order(), derive_one, on_result, workers, window)
 
     committer.flush()
     if failed_parents:
         log(f"  z{z}: {failed_parents} tile(s) could not be derived this "
             f"run; rerun to retry")
-    return written, len(done)
+    return written, n_done, failed_parents
 
 
 # --------------------------------------------------------------------------
@@ -1616,10 +2105,27 @@ def verify_mbtiles_tile(
                 fill_sanity_ok = False
                 fill_note = (f" | void-fill sanity FAIL: {len(bad)}/{len(fill_vals)} "
                              f"filled sample(s) implausible, e.g. {bad[0]:.1f} m")
+            elif max(fill_vals) == 0.0 and min(fill_vals) == 0.0:
+                # Every sampled pixel decoded to exactly 0 m. This reads
+                # like a failed fill and is not one: it is the ocean
+                # convention (module docstring, "NaN, nodata, and the
+                # ocean convention") still applying to these pixels,
+                # because neither GEM-15 nor GLO-30 covers them -- open
+                # ocean, or a pixel that stayed void in all four
+                # contributing children of a derived tile. Said plainly,
+                # with this zoom's own quantization step, rather than
+                # printed as a bare "[0.0, 0.0]" range that an operator
+                # has to go and disprove.
+                fill_note = (f" | void-fill sanity OK ({len(fill_vals)} filled "
+                             f"sample(s) all exactly 0 m: no fill source "
+                             f"covers them, so the 0 m ocean convention "
+                             f"applies -- this zoom quantizes to "
+                             f"{quantization_step_m(z):g} m)")
             else:
                 fill_note = (f" | void-fill sanity OK ({len(fill_vals)} filled "
                              f"sample(s), range [{min(fill_vals):.1f}, "
-                             f"{max(fill_vals):.1f}] m, not cross-checked "
+                             f"{max(fill_vals):.1f}] m, quantization step "
+                             f"{quantization_step_m(z):g} m, not cross-checked "
                              f"against ground truth -- see docstring)")
 
     if not diffs and is_rewarped and not fill_voids:
@@ -1672,6 +2178,92 @@ def verify_mbtiles_tile(
         f"(tolerance {effective_tolerance:.4f} m) -> "
         f"{'OK' if ok else 'FAIL'}{note}{fill_note}{webp_note}")
     return ok
+
+
+# --------------------------------------------------------------------------
+# build summary
+# --------------------------------------------------------------------------
+
+#: Exit codes. 0 and 1 keep their old meanings; PARTIAL is a third code so
+#: a caller can tell "the archive does not cover the requested scope" from
+#: "--verify found a bad tile" without parsing the log.
+EXIT_OK = 0
+EXIT_VERIFY_FAILED = 1
+EXIT_PARTIAL = 3
+
+
+def _fmt_zooms(zooms) -> str:
+    """"z0-z14 (15 level(s))" for a contiguous run, otherwise an explicit
+    list -- never a range that implies levels the archive does not have."""
+    zs = sorted(zooms)
+    if not zs:
+        return "none"
+    if zs == list(range(zs[0], zs[-1] + 1)):
+        if len(zs) == 1:
+            return f"z{zs[0]} (1 level)"
+        return f"z{zs[0]}-z{zs[-1]} ({len(zs)} levels)"
+    return ", ".join(f"z{z}" for z in zs) + f" ({len(zs)} levels)"
+
+
+def log_build_summary(
+    conn: sqlite3.Connection,
+    *,
+    requested_zooms,
+    cells_requested: int,
+    failed_cells: int,
+    unfinished_shared: int,
+    failed_derived: int,
+) -> bool:
+    """Print what the archive actually holds against what was asked for.
+    Returns True only if it covers the requested scope.
+
+    The first global run ended with a summary that read as a clean
+    completion over a 9.6% fragment: the per-cell failures were warnings
+    far up the log, the closing lines were a tile count and a file size
+    with nothing to compare them against, and the exit status was 0, so
+    the job script promoted the fragment as a finished archive. Every
+    number below is measured from the ``tiles`` table rather than taken
+    from the request, and an incomplete archive says so in one line and
+    exits non-zero.
+    """
+    counts = tile_counts_by_zoom(conn)
+    present = sorted(counts)
+    requested = sorted(requested_zooms)
+    missing = [z for z in requested if not counts.get(z)]
+    cells_completed = cells_requested - failed_cells
+
+    log("build summary (measured from the archive, not from the request):")
+    log(f"  cells:        {cells_completed}/{cells_requested} completed"
+        + (f", {failed_cells} failed this run" if failed_cells else ""))
+    log(f"  zooms wanted: {_fmt_zooms(requested)}")
+    log(f"  zooms built:  {_fmt_zooms(present)}")
+    for z in present:
+        log(f"    z{z}: {counts[z]} tile(s)")
+    log(f"  total tiles:  {sum(counts.values())}")
+
+    reasons = []
+    if failed_cells:
+        reasons.append(f"{failed_cells} of {cells_requested} cell(s) failed")
+    if missing:
+        reasons.append(f"no tiles at all at {_fmt_zooms(missing)}")
+    if unfinished_shared:
+        reasons.append(
+            f"{unfinished_shared} shared boundary tile(s) still waiting on a "
+            f"failed neighbouring cell"
+        )
+    if failed_derived:
+        reasons.append(f"{failed_derived} tile(s) failed to derive")
+    if reasons:
+        log("  PARTIAL: " + "; ".join(reasons) + ".")
+        log("  This archive does not cover the requested scope. Its own "
+            "minzoom/maxzoom metadata describes what it really contains, "
+            "so it is safe to publish as a fragment, but it is a fragment. "
+            "Rerun the same command to continue: it only redoes what is "
+            "missing.")
+        return False
+    log("  COMPLETE: every requested zoom level is present and every cell "
+        "completed.")
+    return True
 
 
 # --------------------------------------------------------------------------
@@ -1803,12 +2395,26 @@ def main() -> int:
         description=description,
         attribution=attribution,
         bounds=f"{west},{south},{east},{north}",
-        minzoom=args.minzoom,
-        maxzoom=args.maxzoom,
         encoding="terrarium",
         overview_mode=args.overview_mode,
         void_fill="glo30" if fill_voids else "none",
     )
+    # minzoom/maxzoom are deliberately NOT written from args.minzoom/
+    # args.maxzoom here. They used to be, which is how the OOM-killed
+    # global run left a fragment whose metadata advertised z0-z14 while
+    # the tiles table held only z14. They now always come from the tiles
+    # actually present -- here (so a resumed fragment is honest from the
+    # first second), on every commit (CommitScheduler.flush, so a kill
+    # cannot strand a stale claim), and once more before the convert.
+    lo, hi = sync_zoom_metadata(conn)
+    conn.commit()
+    if lo is None:
+        log("archive currently holds no tiles; minzoom/maxzoom will be "
+            "written from built content as zoom levels complete")
+    else:
+        log(f"archive currently holds z{lo}-z{hi}; minzoom/maxzoom metadata "
+            f"tracks built content, not the requested z{args.minzoom}-"
+            f"z{args.maxzoom}")
 
     # verify_tiles: (z, x, y, url, is_rewarped)
     verify_tiles: list[tuple[int, int, int, str, bool]] = []
@@ -1824,38 +2430,54 @@ def main() -> int:
             verify_tiles.append((z, t.x, t.y, url, is_rewarped))
 
     total_written = 0
-    total_failed_cells = 0
+    failed_cells: set[str] = set()
+    total_unfinished_shared = 0
+    total_failed_derived = 0
 
     if args.overview_mode == "rewarp":
         for z in range(args.minzoom, args.maxzoom + 1):
-            written, already, failed = build_zoom_rewarp(
+            r = build_zoom_rewarp(
                 z, cells, args.band, conn, args.workers, encode_workers,
                 args.window_multiplier, args.force, quantize, committer,
                 fill_voids=fill_voids, tile_format=args.tile_format,
             )
-            total_written += written
-            total_failed_cells += failed
-            maybe_verify(z, bool(written or already), is_rewarped=True)
+            total_written += r.written
+            failed_cells.update(r.failed_cell_ids)
+            total_unfinished_shared += r.unfinished_shared
+            maybe_verify(z, bool(r.written or r.already), is_rewarped=True)
     else:
-        written, already, failed = build_zoom_rewarp(
+        r = build_zoom_rewarp(
             args.maxzoom, cells, args.band, conn, args.workers, encode_workers,
             args.window_multiplier, args.force, quantize, committer,
             fill_voids=fill_voids, tile_format=args.tile_format,
         )
-        total_written += written
-        total_failed_cells += failed
-        maybe_verify(args.maxzoom, bool(written or already), is_rewarped=True)
+        total_written += r.written
+        failed_cells.update(r.failed_cell_ids)
+        total_unfinished_shared += r.unfinished_shared
+        maybe_verify(args.maxzoom, bool(r.written or r.already), is_rewarped=True)
 
         for z in range(args.maxzoom - 1, args.minzoom - 1, -1):
-            written, already = derive_zoom_from_child(
+            written, already, failed_derived = derive_zoom_from_child(
                 z, z + 1, conn, mbtiles_path, args.workers, args.force, quantize, committer,
                 tile_format=args.tile_format,
             )
             total_written += written
+            total_failed_derived += failed_derived
             maybe_verify(z, bool(written or already), is_rewarped=False)
 
     log(f"wrote {total_written} new tile(s) to {mbtiles_path} "
-        f"({total_failed_cells} cell failure(s) total)")
+        f"({len(failed_cells)} cell failure(s) total)")
+
+    sync_zoom_metadata(conn)
+    conn.commit()
+    complete = log_build_summary(
+        conn,
+        requested_zooms=range(args.minzoom, args.maxzoom + 1),
+        cells_requested=len(cells),
+        failed_cells=len(failed_cells),
+        unfinished_shared=total_unfinished_shared,
+        failed_derived=total_failed_derived,
+    )
 
     all_ok = True
     for z, x, y, url, is_rewarped in verify_tiles:
@@ -1867,20 +2489,35 @@ def main() -> int:
 
     conn.close()
 
+    def exit_code() -> int:
+        # Scope first: a fragment is the more consequential thing to
+        # report, and a --verify failure inside a fragment is not news.
+        if not complete:
+            return EXIT_PARTIAL
+        return EXIT_OK if all_ok else EXIT_VERIFY_FAILED
+
     if args.skip_convert:
         log("--skip-convert set; leaving MBTiles in place")
-        return 0 if all_ok else 1
+        return exit_code()
 
     args.output.parent.mkdir(parents=True, exist_ok=True)
     cmd = ["pmtiles", "convert", "--force", str(mbtiles_path), str(args.output)]
     log("running: " + " ".join(cmd))
     subprocess.run(cmd, check=True)
     log(f"wrote {args.output} ({args.output.stat().st_size / 1e6:.2f} MB)")
-    if total_failed_cells:
-        log(f"NOTE: {total_failed_cells} cell failure(s) occurred; some "
-            f"tiles may be missing or incomplete. Rerun the same command "
-            f"to retry -- it will only redo what is not yet in the MBTiles.")
-    return 0 if all_ok else 1
+    if not complete:
+        # Last line of the log, after the reassuring file size, because
+        # that file size is exactly what read as success last time.
+        log(f"PARTIAL ARCHIVE: {args.output} does not cover the requested "
+            f"scope (see the build summary above). Exit code "
+            f"{EXIT_PARTIAL}. It is a usable fragment and its metadata "
+            f"describes itself correctly; rerun the same command to "
+            f"finish it.")
+    elif not all_ok:
+        log(f"VERIFY FAILED: the archive covers the requested scope, but at "
+            f"least one sampled tile did not match a direct source read. "
+            f"Exit code {EXIT_VERIFY_FAILED}.")
+    return exit_code()
 
 
 if __name__ == "__main__":
