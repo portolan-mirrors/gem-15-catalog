@@ -262,6 +262,120 @@ it and a transparent pixel as no value and prints an em dash. A failed fetch, a
 missing tile and an undecodable tile all end the same way, and the panel says
 which zooms it tried and how each one came back.
 
+## Mapterhorn today beside a GEM-15 build
+
+`mapterhorn-gem15.html` puts what Mapterhorn ships today beside GEM-15 run
+through their pipeline, in two synced panes, over three areas. GitHub Pages
+serves it at
+<https://portolan-mirrors.github.io/gem-15-catalog/maplibre-terrain/mapterhorn-gem15.html>.
+
+The archives in the right pane are experimental. They come from an unmerged
+fork, [cholmes/mapterhorn tree gem-15-source](https://github.com/cholmes/mapterhorn/tree/gem-15-source),
+and the upstream discussion is
+[mapterhorn/mapterhorn#368](https://github.com/mapterhorn/mapterhorn/issues/368).
+The Mapterhorn project publishes none of them. The page says so in a note that
+stays on screen.
+
+### Why three areas
+
+Mapterhorn covers zoom 0 to 12 everywhere from one `planet.pmtiles`, and zoom
+13 and deeper from one archive per zoom 6 tile, named `6-{x}-{y}.pmtiles`. A
+regional archive exists where a national model justifies one, and nowhere else.
+So the honest question is not whether GEM-15 beats Mapterhorn. It is where.
+
+| Area | Mapterhorn today | The GEM-15 build |
+| --- | --- | --- |
+| Barcelona | shard `6-32-23`, to zoom 16 | zoom 0 to 12 |
+| Cusco and Machu Picchu | `planet.pmtiles`, zoom 12 | zoom 0 to 13 |
+| High Atlas and Toubkal | `planet.pmtiles`, zoom 12 | zoom 0 to 13 |
+
+Over Barcelona, Mapterhorn production is Spanish lidar at zoom 16. GEM-15
+enters at zoom 12 under the Mapterhorn maxzoom rule, because 15 m at 41N does
+not clear their zoom 13 threshold. GEM-15 does not compete where national lidar
+exists, and the page states that rather than hiding it.
+
+Over Cusco and over the High Atlas, Mapterhorn has Copernicus GLO-30 alone,
+because no regional archive exists there. The GEM-15 build adds zoom 13, one
+level deeper than production, from a 15 m source rather than a 30 m one. That
+is the case for the experiment.
+
+All three GEM-15 archives carry the water-void fill from Copernicus GLO-30, the
+same fill the Sau reservoir preset shows.
+
+### What was measured on the live files
+
+Everything below was read from the archives on 2026-11-15. Each PMTiles v3
+header came back over a range request, and the root directory was decoded to
+get the real tile footprint. No archive was downloaded in full.
+
+| Archive | Size | Zooms | Footprint from the directory |
+| --- | --- | --- | --- |
+| `mapterhorn-gem15-barcelona.pmtiles` | 42.1 MB | 0 to 12 | lon 0 to 5.625, lat 36.598 to 45.089 |
+| `mapterhorn-gem15-cusco.pmtiles` | 129.4 MB | 0 to 13 | lon &minus;73.125 to &minus;70.3125, lat &minus;16.636 to &minus;11.178 |
+| `mapterhorn-gem15-atlas.pmtiles` | 114.6 MB | 0 to 13 | lon &minus;8.4375 to &minus;5.625, lat 29.535 to 34.307 |
+
+All three are terrarium WebP, 512 px, uncompressed tiles, minzoom 0. All three
+answer 206 to a range request and send `access-control-allow-origin: *`. One
+tile out of each one was decoded to confirm the tile size and the encoding. The
+heights agree with the ground. Machu Picchu reads 2442 m, Toubkal 4109 m, and
+Imlil 1736 m.
+
+**The header bounds of these archives say the whole world, which is wrong about
+coverage.** So the page declares the measured footprint on the `raster-dem`
+source rather than the header value. That keeps MapLibre from requesting tiles outside
+the build.
+
+A HEAD request on each candidate Mapterhorn archive shows which areas have
+one. `6-32-23.pmtiles` answers 200 and holds the Barcelona view box.
+`6-19-34.pmtiles` answers 404, and it is the only zoom 6 tile the whole Cusco
+footprint falls in. `6-30-26.pmtiles` answers 404, and it holds Toubkal, Imlil,
+and Oukaimeden.
+
+### The view box is not the footprint
+
+One neighbour forced that split. `6-30-25.pmtiles` answers 200. It covers the
+Middle Atlas, north of latitude 32.0997, and the Atlas footprint reaches to
+34.307. A reader who panned past 32.0997 would cross into an archive that does
+exist, and the left pane would stop being planet-only without saying so. So the
+Atlas view box stops at latitude 32.05. The Barcelona box is held the other
+way, inside `6-32-23` rather than straying into `6-32-24`, which also answers
+200 and which this page has measured nothing about. A comment beside each area
+in the page records its box and the reason for it.
+
+### Tilt, sync, and the area switch
+
+Both panes raise a MapLibre terrain mesh from the same `raster-dem` source they
+draw, so an oblique view shows two meshes rather than one mesh with two skins
+on it. The `3D` button tilts both to a pitch of 60, and a right-drag rotates
+and tilts them by hand. One relief slider scales both meshes by one factor.
+Center, zoom, bearing, and pitch all sync, under the same two guards the
+three-pane page uses.
+
+An area switch rewrites three things together: the style of each pane, the
+camera limits, and every place name in the bar. The camera limits need the
+awkward order. `maxBounds` clamps the camera, so the new box cannot go on
+before the flight, or a flight from Barcelona to Cusco inside the Cusco box
+would never leave Barcelona. The box comes off, the panes fly, and the new box
+goes on at the end of the flight. A token guards that, because a reader can
+switch area again in mid-flight.
+
+A click reads one elevation out of each pane, at the best zoom that pane has in
+this area. The decode path is the one the three-pane page uses. Over Barcelona
+the left pane walks down from zoom 17 and stops at 16. The right pane reads
+zoom 12. Over the other two areas the left pane reads zoom 12 and the right
+pane reads zoom 13. The panel prints the elevation, the zoom, the ground
+resolution of that zoom, the tile, the archive the bytes came from, and the
+difference between the two panes.
+
+### Attribution on this page
+
+The GEM-15 source carries three credits, and all three are required rather than
+polite. Google produces the elevation data and licenses it CC-BY-4.0. The
+filled pixels carry the Copernicus notice. The tiles were cut by the Mapterhorn
+pipeline, and the archive metadata itself holds their string, so the page
+repeats it and names the fork. The left pane credits "© Mapterhorn" with a link
+to their attribution page, the same form the three-pane page uses.
+
 ## The data is not published yet
 
 This catalog has not had its first data publish, so the terrain PMTiles asset

@@ -1,0 +1,1502 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Mapterhorn today beside a GEM-15 build, three areas</title>
+
+<!--
+  WHAT THIS PAGE IS FOR.
+
+  Mapterhorn builds terrarium terrain tiles from open elevation sources. One
+  planet.pmtiles covers zoom 0 to 12 everywhere, and a regional shard named
+  6-{x}-{y}.pmtiles carries zoom 13 and deeper over the areas they have built.
+  A shard exists where a national model justifies one, and nowhere else.
+
+  This page runs GEM-15 through their pipeline and puts the result beside what
+  they ship today, over three areas chosen because the answer differs:
+
+    Barcelona      Mapterhorn has a shard, 6-32-23, and it serves z16 here.
+    Cusco          No shard. Mapterhorn is planet-only, so z12 is the floor.
+    High Atlas     No shard over Toubkal. Planet-only again.
+
+  So the left pane changes character between areas and the right pane does
+  not. That asymmetry is the whole comparison: GEM-15 at 15 m is a large gain
+  where nothing better than Copernicus GLO-30 exists, and no gain at all where
+  a national lidar survey already does.
+
+  THESE ARCHIVES ARE AN EXPERIMENT, NOT A MAPTERHORN RELEASE. They come from
+  an unmerged fork, https://github.com/cholmes/mapterhorn tree gem-15-source,
+  and the upstream discussion is mapterhorn/mapterhorn issue 368. Nothing here
+  is published by the Mapterhorn project.
+
+  THE THREE GEM-15 ARCHIVES, measured against the live files on 2026-11-15.
+  Each PMTiles v3 header was read over a range request, and the root directory
+  was decoded to get the real tile footprint. The header bounds say the whole
+  world in all three files, which is wrong about coverage, so the footprints
+  below come from the directory rather than from the header.
+
+    mapterhorn-gem15-barcelona.pmtiles  webp, uncompressed, z0-12, 42.1 MB
+      z12 tiles x 2048-2111, y 1472-1599, so lon 0 to 5.625 and lat 36.598
+      to 45.089. That is the z6 pair 32/23 and 32/24.
+    mapterhorn-gem15-cusco.pmtiles      webp, uncompressed, z0-13, 129.4 MB
+      z13 tiles x 2432-2495, y 4352-4479, so lon -73.125 to -70.3125 and lat
+      -16.636 to -11.178. All inside the single z6 tile 19/34.
+    mapterhorn-gem15-atlas.pmtiles      webp, uncompressed, z0-13, 114.6 MB
+      z13 tiles x 3904-3967, y 3264-3391, so lon -8.4375 to -5.625 and lat
+      29.535 to 34.307. That is the z6 pair 30/25 and 30/26.
+
+  Tiles are 512 px, the Mapterhorn tile size, confirmed by decoding one tile
+  from each archive. Encoding is terrarium. Every archive answers 206 to a
+  range request and sends access-control-allow-origin: *.
+
+  WHICH MAPTERHORN SHARDS EXIST, from a HEAD request on each candidate on
+  2026-11-15. The z6 tile that holds a point is x >> (z - 6), y >> (z - 6).
+
+    6-32-23   200   holds the Barcelona view box
+    6-32-24   200   south of it, outside the view box
+    6-19-34   404   holds the whole Cusco archive footprint
+    6-30-26   404   holds Toubkal, Imlil and Oukaimeden
+    6-30-25   200   the Middle Atlas, north of lat 32.0997
+
+  THE VIEW BOX IS NOT THE ARCHIVE FOOTPRINT, and the reason is 6-30-25. The
+  Atlas archive reaches to lat 34.307, but a reader who panned past lat
+  32.0997 would cross into a shard that does exist, and the left pane would
+  stop being planet-only without saying so. So the Atlas view box stops at
+  lat 32.05. The Barcelona box is clamped the other way, to stay inside
+  6-32-23 rather than straying into 6-32-24. Each box is stated below with
+  its reason.
+
+  Dependencies, pinned from unpkg, the same versions as the other pages here:
+  - pmtiles 4.5.0, dist/pmtiles.js. An IIFE build that sets a global named
+    `pmtiles`, so a classic script tag loads it.
+  - maplibre-gl 6.18.0, dist/maplibre-gl.mjs. ESM only, so the module script
+    below imports it. A classic script runs first, so the global is in time.
+  The color-relief layer type needs MapLibre GL JS 5.6.0 or newer, and
+  hillshade-method needs 5.5.0 or newer.
+-->
+<link rel="stylesheet" href="https://unpkg.com/maplibre-gl@6.18.0/dist/maplibre-gl.css">
+<script src="https://unpkg.com/pmtiles@4.5.0/dist/pmtiles.js"></script>
+
+<style>
+  :root {
+    --panel-bg: rgba(255, 255, 255, 0.95);
+    --ink: #1c2529;
+    --muted: #5a666d;
+    --line: #d2dade;
+    --accent: #2f6f8f;
+    --chrome: #f7f9fa;
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { margin: 0; height: 100%; }
+  body {
+    display: grid;
+    grid-template-rows: auto 1fr auto;
+    height: 100%;
+    overflow: hidden;
+    font: 14px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    color: var(--ink);
+    background: var(--chrome);
+  }
+
+  /* ---------- the bar ---------- */
+  header {
+    border-bottom: 1px solid var(--line);
+    background: var(--chrome);
+  }
+  .bar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px 16px;
+    padding: 8px 12px;
+  }
+  .brand { display: flex; align-items: baseline; gap: 8px; margin-right: auto; }
+  .brand h1 { margin: 0; font-size: 15px; white-space: nowrap; }
+  .brand .sub { color: var(--muted); font-size: 12px; }
+  .brand .sub a { color: var(--accent); }
+
+  .group { display: flex; align-items: center; gap: 6px; }
+  .group > .group-label {
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.07em;
+    color: var(--muted);
+  }
+  button, .seg label {
+    font: inherit;
+    color: inherit;
+    background: #fff;
+    border: 1px solid var(--line);
+    border-radius: 5px;
+    padding: 5px 9px;
+    cursor: pointer;
+    white-space: nowrap;
+  }
+  button:hover, .seg label:hover { border-color: var(--accent); color: var(--accent); }
+  .seg { display: flex; gap: 0; }
+  .seg input { position: absolute; opacity: 0; pointer-events: none; }
+  .seg label { border-radius: 0; }
+  .seg label:first-of-type { border-radius: 5px 0 0 5px; }
+  .seg label:last-of-type { border-radius: 0 5px 5px 0; }
+  /* One shared border between neighbours rather than two stacked ones. */
+  .seg label:not(:first-of-type) { border-left-width: 0; }
+  .seg input:checked + label {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: #fff;
+  }
+  .seg input:focus-visible + label { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+  /* The area switch is the primary control, so it reads heavier than the rest. */
+  #areas .seg label { padding: 5px 11px; font-weight: 600; }
+
+  /* The 3D switch reads as pressed while the panes are tilted, and it reads as
+     pressed whether a click or a drag-rotate did the tilting. */
+  button[aria-pressed="true"] {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: #fff;
+  }
+  button[aria-pressed="true"]:hover { color: #fff; }
+
+  .group input[type="range"] {
+    width: 92px;
+    accent-color: var(--accent);
+    vertical-align: middle;
+  }
+  .group .val {
+    min-width: 2.3em;
+    font-size: 11px;
+    color: var(--muted);
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* The shared ramp. Colour means the same height in both panes, which is the
+     whole point of an absolute ramp rather than a per-source stretch. */
+  .legend { display: flex; align-items: center; gap: 8px; }
+  .legend .scale { width: 150px; }
+  .legend .bar-strip {
+    height: 9px;
+    border: 1px solid var(--line);
+    border-radius: 2px;
+  }
+  .legend .ticks {
+    display: flex;
+    justify-content: space-between;
+    font-size: 10px;
+    color: var(--muted);
+    font-variant-numeric: tabular-nums;
+  }
+
+  .notes {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    gap: 0 12px;
+    border-top: 1px solid var(--line);
+  }
+  #explainer {
+    margin: 0;
+    padding: 7px 12px 8px;
+    background: #f2f7f9;
+    color: #2b4149;
+    font-size: 11.5px;
+  }
+  #explainer b { font-weight: 600; }
+  .status {
+    margin: 0;
+    padding: 7px 12px 8px;
+    max-width: 24em;
+    background: #fff6e5;
+    border-left: 1px solid var(--line);
+    color: #5c4420;
+    font-size: 11px;
+  }
+  .status a { color: #8a5a10; }
+
+  /* ---------- the panes ---------- */
+  .panes {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 1px;
+    min-height: 0;
+    background: var(--line);
+  }
+  .pane { position: relative; min-width: 0; min-height: 0; overflow: hidden; }
+  .pane-map { position: absolute; inset: 0; }
+  .pane-label {
+    position: absolute;
+    top: 8px;
+    left: 8px;
+    right: 8px;
+    z-index: 2;
+    max-width: 26em;
+    padding: 6px 9px;
+    background: var(--panel-bg);
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    box-shadow: 0 1px 6px rgba(0, 0, 0, 0.14);
+    pointer-events: none;
+  }
+  .pane-label h2 { margin: 0; font-size: 13px; }
+  .pane-label p { margin: 2px 0 0; font-size: 11px; color: var(--muted); }
+  .pane-label .model {
+    display: inline-block;
+    margin-left: 5px;
+    padding: 0 5px;
+    border-radius: 3px;
+    background: #e8eef1;
+    color: var(--muted);
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    vertical-align: 1px;
+  }
+  .pane-note {
+    position: absolute;
+    left: 8px;
+    /* Clear of the scale control, which sits in the same corner. */
+    bottom: 32px;
+    z-index: 2;
+    display: none;
+    padding: 4px 8px;
+    background: #fff6e5;
+    border: 1px solid #e0b25f;
+    border-radius: 5px;
+    font-size: 11px;
+    color: #5c4420;
+  }
+  .pane-note.show { display: block; }
+
+  /* ---------- the probe ---------- */
+  #probe {
+    border-top: 1px solid var(--line);
+    background: var(--chrome);
+    max-height: 42vh;
+    overflow-y: auto;
+  }
+  .probe-head {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 7px 12px 0;
+  }
+  .probe-head strong { font-size: 12px; }
+  .probe-head .pos {
+    color: var(--muted);
+    font-size: 12px;
+    font-variant-numeric: tabular-nums;
+    margin-right: auto;
+  }
+  .probe-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 8px;
+    padding: 6px 12px 0;
+  }
+  .card {
+    padding: 6px 9px;
+    background: #fff;
+    border: 1px solid var(--line);
+    border-radius: 6px;
+  }
+  .card h3 {
+    margin: 0;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--muted);
+  }
+  .card .elev {
+    margin: 1px 0 0;
+    font-size: 19px;
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+  }
+  .card .elev.pending { color: var(--muted); font-weight: 400; font-size: 15px; }
+  .card .meta {
+    margin: 1px 0 0;
+    font-size: 11px;
+    color: var(--muted);
+    overflow-wrap: anywhere;
+  }
+  .deltas {
+    margin: 0;
+    padding: 7px 12px 9px;
+    font-size: 11.5px;
+    color: var(--muted);
+  }
+  .deltas span { font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .deltas span + span::before { content: " \00b7 "; color: var(--line); }
+
+  .hint {
+    margin: 0;
+    padding: 9px 12px;
+    font-size: 12px;
+    color: var(--muted);
+    text-align: center;
+    border-top: 1px solid var(--line);
+    background: var(--chrome);
+  }
+
+  /* One column below the width where two map panes stop being readable. */
+  @media (max-width: 760px) {
+    .panes { grid-template-columns: 1fr; grid-template-rows: repeat(2, 1fr); }
+    .probe-grid { grid-template-columns: 1fr; }
+    .notes { grid-template-columns: 1fr; }
+    .status { max-width: none; border-left: 0; border-top: 1px solid var(--line); }
+    .brand .sub { display: none; }
+    .legend { display: none; }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="bar">
+    <div class="brand">
+      <h1>Mapterhorn today, and a GEM-15 build</h1>
+      <span class="sub">
+        <a href="https://source.coop/mapterhorn/mapterhorn" target="_blank" rel="noopener">Mapterhorn</a> ·
+        <a href="https://source.coop/portolan-mirrors/gem-15-catalog" target="_blank" rel="noopener">GEM-15</a>
+      </span>
+    </div>
+
+    <div class="group" id="areas">
+      <span class="group-label">Area</span>
+      <div class="seg">
+        <input type="radio" name="area" id="area-barcelona" value="barcelona" checked>
+        <label for="area-barcelona">Barcelona</label>
+        <input type="radio" name="area" id="area-cusco" value="cusco">
+        <label for="area-cusco">Cusco&ndash;Machu Picchu</label>
+        <input type="radio" name="area" id="area-atlas" value="atlas">
+        <label for="area-atlas">High Atlas&ndash;Toubkal</label>
+      </div>
+    </div>
+
+    <div class="group">
+      <span class="group-label">Surface</span>
+      <div class="seg">
+        <input type="radio" name="mode" id="mode-tint" value="tint" checked>
+        <label for="mode-tint">Tint and shade</label>
+        <input type="radio" name="mode" id="mode-shade" value="shade">
+        <label for="mode-shade">Shade only</label>
+      </div>
+    </div>
+
+    <div class="group">
+      <span class="group-label">View</span>
+      <button type="button" id="tilt" aria-pressed="false"
+              title="Tilt both panes to a pitch of 60. Right-drag or ctrl-drag tilts and rotates them by hand.">3D</button>
+    </div>
+
+    <div class="group">
+      <label class="group-label" for="exaggeration">Relief</label>
+      <input type="range" id="exaggeration" min="0" max="3" step="0.1" value="1">
+      <span class="val" id="exaggeration-value">1.0&times;</span>
+    </div>
+
+    <div class="group legend">
+      <span class="group-label">Metres</span>
+      <div class="scale">
+        <div class="bar-strip" id="legend-strip"></div>
+        <div class="ticks" id="legend-ticks"></div>
+      </div>
+    </div>
+
+    <div class="group" id="places">
+      <span class="group-label">Go to</span>
+    </div>
+  </div>
+
+  <div class="notes">
+    <p id="explainer"></p>
+    <p class="status">
+      <b>Experimental.</b> The right pane reads archives built on an unmerged
+      fork,
+      <a href="https://github.com/cholmes/mapterhorn/tree/gem-15-source" target="_blank" rel="noopener">cholmes/mapterhorn
+      tree gem-15-source</a>, and discussed upstream in
+      <a href="https://github.com/mapterhorn/mapterhorn/issues/368" target="_blank" rel="noopener">mapterhorn
+      issue 368</a>. They are not Mapterhorn releases.
+    </p>
+  </div>
+</header>
+
+<main class="panes" id="panes"></main>
+
+<p class="hint" id="hint">
+  Click anywhere on a map to read the elevation from both sources at the best
+  zoom each one has. Press <b>3D</b>, or right-drag, to tilt the panes together.
+</p>
+
+<section id="probe" hidden>
+  <div class="probe-head">
+    <strong>Elevation probe</strong>
+    <span class="pos" id="probe-pos"></span>
+    <button type="button" id="probe-clear">Clear</button>
+  </div>
+  <div class="probe-grid" id="probe-grid"></div>
+  <p class="deltas" id="probe-deltas"></p>
+</section>
+
+<script type="module">
+import * as maplibregl from 'https://unpkg.com/maplibre-gl@6.18.0/dist/maplibre-gl.mjs';
+
+// ---------------------------------------------------------------------------
+// The archives
+// ---------------------------------------------------------------------------
+
+// Mapterhorn production. Their README gives the layout and this page follows
+// it: one planet.pmtiles for z0-12, then one archive per z6 tile named
+// 6-{x >> (z - 6)}-{y >> (z - 6)}.pmtiles for z13 and deeper.
+const MAPTERHORN_BASE =
+  'https://s3.us-west-2.amazonaws.com/us-west-2.opendata.source.coop/mapterhorn/mapterhorn/';
+
+// The GEM-15 builds, from this catalog's bucket.
+const GEM15_BASE =
+  'https://data.source.coop/portolan-mirrors/gem-15-catalog/mapterhorn-gem15/';
+
+// ---------------------------------------------------------------------------
+// Attribution
+//
+// MapLibre ignores the attribution in PMTiles metadata or in a TileJSON that a
+// protocol handler returns. The string has to sit on the source itself, so
+// each source below carries its own.
+// ---------------------------------------------------------------------------
+
+// Mapterhorn's README states that they use the sources listed on one
+// attribution page, and their own MapLibre example credits "© Mapterhorn" with
+// a link to it. That is the whole of their stated requirement, and it is also
+// the only correct form here: their catalogue holds 134 sources and they do not
+// publish which one built a given tile.
+const MAPTERHORN_ATTRIBUTION =
+  '<a href="https://mapterhorn.com/attribution" target="_blank" rel="noopener">© Mapterhorn</a>' +
+  ' | 134 open national and global elevation sources, listed on that page';
+
+// The GEM-15 build needs three credits, and all three are required rather than
+// polite. Google produces and licenses the elevation data. The water voids are
+// filled from Copernicus GLO-30, which carries a fixed notice. The tiles were
+// cut by the Mapterhorn pipeline, and the archive metadata itself carries their
+// string, so it is repeated here.
+const GEM15_ATTRIBUTION =
+  'This dataset is produced by Google | ' +
+  '<a href="https://creativecommons.org/licenses/by/4.0/" target="_blank" rel="noopener">CC-BY-4.0</a>' +
+  ' | <a href="https://source.coop/portolan-mirrors/gem-15-catalog" target="_blank" rel="noopener">gem-15-catalog</a>' +
+  ' | filled pixels: produced using Copernicus WorldDEM-30 © DLR e.V. 2010-2014 ' +
+  'and © Airbus Defence and Space GmbH 2014-2018 provided under COPERNICUS by ' +
+  'the European Union and ESA; all rights reserved' +
+  ' | tiled with the ' +
+  '<a href="https://github.com/cholmes/mapterhorn/tree/gem-15-source" target="_blank" rel="noopener">Mapterhorn pipeline</a>, ' +
+  'an unmerged fork, not a Mapterhorn release';
+
+// ---------------------------------------------------------------------------
+// The three areas
+//
+// `coverage` is the GEM-15 archive footprint, decoded from the PMTiles root
+// directory rather than read from the header, because all three headers
+// declare the whole world.
+//
+// `view` is the box the panes are held inside. It is a subset of `coverage`
+// wherever a wider box would make the left pane's maxzoom claim false. Each
+// one states why.
+//
+// `shardMaxzoom` is what Mapterhorn production serves here: the deepest zoom
+// of the regional shard, or null when no shard exists and planet z12 is all
+// they have.
+// ---------------------------------------------------------------------------
+
+const AREAS = [
+  {
+    id: 'barcelona',
+    label: 'Barcelona',
+    archive: 'mapterhorn-gem15-barcelona.pmtiles',
+    coverage: [0, 36.5979, 5.625, 45.0890],
+    // Inside the z6 tile 32/23, which is the shard that serves z16 here. The
+    // archive also covers 32/24 to the south, where a separate shard exists
+    // and this page has measured nothing.
+    view: [0.6, 41.0, 3.6, 42.5],
+    gemMaxzoom: 12,
+    shardMaxzoom: 16,
+    shardName: '6-32-23',
+    mapMaxZoom: 17,
+    legendMax: 2400,
+    center: [2.1650, 41.3900],
+    zoom: 13,
+    left: {
+      model: 'lidar',
+      blurb: 'planet.pmtiles for z0–12, then the regional shard 6-32-23 for ' +
+        'z13–16. Spanish lidar underneath, at a resolution GEM-15 cannot match.',
+    },
+    right: {
+      model: 'DSM',
+      blurb: 'The GEM-15 build stops at z12, so this pane overzooms from ' +
+        'there. 42.1 MB, lon 0 to 5.625, lat 36.598 to 45.089.',
+    },
+    explainer:
+      '<b>Barcelona: GEM-15 loses, and that is the useful result.</b> ' +
+      'Mapterhorn production here is Spanish lidar at z16. GEM-15 enters at ' +
+      'z12 under Mapterhorn\'s maxzoom rule, because 15 m at 41N does not ' +
+      'clear their z13 threshold. GEM-15 does not compete where national ' +
+      'lidar exists. Our archives also carry the water-void fill from ' +
+      'Copernicus GLO-30, which is what the Sau reservoir preset shows.',
+    places: [
+      {
+        label: 'Sau reservoir',
+        hint: 'GEM-15 masks water here, and the build fills it from GLO-30.',
+        center: [2.4000, 41.9700], zoom: 13.5,
+      },
+      {
+        label: 'Montserrat',
+        hint: 'Steep relief, where four zoom levels of difference show.',
+        center: [1.8380, 41.5930], zoom: 13.5,
+      },
+      {
+        label: 'City center',
+        hint: 'City blocks. GEM-15 is a surface model and the lidar here is not.',
+        center: [2.1650, 41.3900], zoom: 15,
+      },
+    ],
+  },
+  {
+    id: 'cusco',
+    label: 'Cusco–Machu Picchu',
+    archive: 'mapterhorn-gem15-cusco.pmtiles',
+    coverage: [-73.125, -16.6362, -70.3125, -11.1784],
+    // The whole footprint sits inside the single z6 tile 19/34, and
+    // 6-19-34.pmtiles answers 404. So no part of this box has a shard and the
+    // view box is the footprint.
+    view: [-73.125, -16.6362, -70.3125, -11.1784],
+    gemMaxzoom: 13,
+    shardMaxzoom: null,
+    shardName: null,
+    mapMaxZoom: 15,
+    legendMax: 6400,
+    center: [-72.5450, -13.1630],
+    zoom: 13,
+    left: {
+      model: 'GLO-30',
+      blurb: 'planet.pmtiles only. No regional shard covers this z6 tile, so ' +
+        'z12 is the deepest tile Mapterhorn has here.',
+    },
+    right: {
+      model: 'DSM',
+      blurb: 'The GEM-15 build reaches z13, one level deeper than production. ' +
+        '129.4 MB, lon -73.125 to -70.3125, lat -16.636 to -11.178.',
+    },
+    explainer:
+      '<b>Cusco: one level deeper, from a finer source.</b> ' +
+      'Mapterhorn is GLO-30-only here, because no regional shard exists. The ' +
+      'GEM-15 build adds z13, one level deeper than production, from a 15 m ' +
+      'source rather than a 30 m one. This is where the experiment pays. Our ' +
+      'archives also carry the Sau-style water-void fill from Copernicus ' +
+      'GLO-30.',
+    places: [
+      {
+        label: 'Machu Picchu',
+        hint: 'The citadel ridge, where 15 m and 30 m part company on a cliff.',
+        center: [-72.5450, -13.1630], zoom: 14,
+      },
+      {
+        label: 'Cusco valley',
+        hint: 'The city at 3400 m, in a valley the coarse grid rounds off.',
+        center: [-71.9780, -13.5190], zoom: 13.5,
+      },
+      {
+        label: 'Ollantaytambo',
+        hint: 'Terraces in the Sacred Valley, under 4000 m walls.',
+        center: [-72.2650, -13.2575], zoom: 14,
+      },
+    ],
+  },
+  {
+    id: 'atlas',
+    label: 'High Atlas–Toubkal',
+    archive: 'mapterhorn-gem15-atlas.pmtiles',
+    coverage: [-8.4375, 29.5352, -5.625, 34.3071],
+    // The footprint crosses from the z6 tile 30/26, where no shard exists,
+    // into 30/25, where one does. 6-30-25.pmtiles answers 200. The top edge of
+    // 30/26 is lat 32.0997, so the box stops below it and the left pane stays
+    // planet-only everywhere a reader can go.
+    view: [-8.4375, 29.5352, -5.625, 32.05],
+    gemMaxzoom: 13,
+    shardMaxzoom: null,
+    shardName: null,
+    mapMaxZoom: 15,
+    legendMax: 4200,
+    center: [-7.9147, 31.0606],
+    zoom: 13,
+    left: {
+      model: 'GLO-30',
+      blurb: 'planet.pmtiles only. 6-30-26, the z6 tile that holds Toubkal, ' +
+        'has no shard, so z12 is the deepest tile here.',
+    },
+    right: {
+      model: 'DSM',
+      blurb: 'The GEM-15 build reaches z13. 114.6 MB, lon -8.4375 to -5.625, ' +
+        'lat 29.535 to 34.307.',
+    },
+    explainer:
+      '<b>High Atlas: the same gain, on harder ground.</b> ' +
+      'Mapterhorn is GLO-30-only here, because no regional shard exists. The ' +
+      'GEM-15 build adds z13, one level deeper than production, from a 15 m ' +
+      'source rather than a 30 m one. This is where the experiment pays. Our ' +
+      'archives also carry the Sau-style water-void fill from Copernicus ' +
+      'GLO-30.',
+    places: [
+      {
+        label: 'Toubkal',
+        hint: 'The summit at 4167 m, the high point of North Africa.',
+        center: [-7.9147, 31.0606], zoom: 14,
+      },
+      {
+        label: 'Imlil valley',
+        hint: 'The Mizane valley at 1740 m, the walk-in to Toubkal.',
+        center: [-7.9190, 31.1360], zoom: 14,
+      },
+      {
+        label: 'Oukaimeden',
+        hint: 'A high basin at about 2800 m, under the Jbel Attar ridge.',
+        center: [-7.8610, 31.1930], zoom: 13.5,
+      },
+    ],
+  },
+];
+
+const areaById = new Map(AREAS.map((area) => [area.id, area]));
+
+// ---------------------------------------------------------------------------
+// The shared hypsometric ramp
+//
+// Stops match the catalog's hypsometric.json, in metres above the geoid. One
+// absolute ramp across both panes is what makes the colours comparable: a
+// per-source stretch would hide exactly the disagreement this page is for.
+// ---------------------------------------------------------------------------
+
+const ELEVATION_RAMP = [
+  -430, '#0f3d2e', -5, '#1d5c42', 0, '#5d7f93', 1, '#2d6a3f',
+  100, '#4e8c4a', 300, '#7aa85a', 600, '#a8c06a', 900, '#cfcf7d',
+  1200, '#e2cf8c', 1600, '#d8b074', 2000, '#c0905c', 2400, '#a4744a',
+  2800, '#8a5c3e', 3200, '#745038', 3600, '#6d5b50', 4200, '#8a7d74',
+  4800, '#a99d95', 5400, '#c9c0ba', 6000, '#e6e2df', 6800, '#ffffff',
+  8849, '#ffffff',
+];
+
+// Under the tint, igor keeps the colour legible. Alone, the shading carries the
+// whole image, so it goes harder and sits on a paper-coloured ground.
+const HILLSHADE_WITH_TINT = {
+  'hillshade-exaggeration': 0.5,
+  'hillshade-shadow-color': 'rgba(24, 22, 18, 0.55)',
+  'hillshade-highlight-color': 'rgba(255, 253, 245, 0.25)',
+};
+const HILLSHADE_ALONE = {
+  'hillshade-exaggeration': 0.9,
+  'hillshade-shadow-color': 'rgba(28, 25, 20, 0.9)',
+  'hillshade-highlight-color': 'rgba(255, 255, 255, 0.35)',
+};
+const BACKGROUND_WITH_TINT = '#36454f';
+const BACKGROUND_ALONE = '#f1eee7';
+
+// ---------------------------------------------------------------------------
+// Web Mercator tile arithmetic
+// ---------------------------------------------------------------------------
+
+function tileCoords(lon, lat, z, tilePx) {
+  const n = 2 ** z;
+  const xf = (lon + 180) / 360 * n;
+  const s = Math.sin(lat * Math.PI / 180);
+  const yf = (0.5 - Math.log((1 + s) / (1 - s)) / (4 * Math.PI)) * n;
+  const x = Math.floor(xf);
+  const y = Math.floor(yf);
+  return {
+    x, y,
+    px: Math.min(tilePx - 1, Math.floor((xf - x) * tilePx)),
+    py: Math.min(tilePx - 1, Math.floor((yf - y) * tilePx)),
+  };
+}
+
+// Metres on the ground per tile pixel. A 512 px tile at zoom z covers the same
+// ground as a 256 px tile at that zoom, so it halves the pixel.
+function groundRes(lat, z, tilePx) {
+  return 156543.03392804097 * Math.cos(lat * Math.PI / 180) / 2 ** z * (256 / tilePx);
+}
+
+// ---------------------------------------------------------------------------
+// Terrarium decode
+//
+// elevation = R * 256 + G + B / 256 - 32768
+//
+// Both sources hand back WebP bytes. createImageBitmap decodes them, and a 1
+// by 1 canvas drawn at a negative offset lifts the one pixel wanted without
+// allocating a full tile of image data. Fetching the bytes rather than pointing
+// an <img> at the URL also sidesteps canvas tainting, so no crossOrigin dance
+// is needed.
+// ---------------------------------------------------------------------------
+
+const probeCanvas = document.createElement('canvas');
+probeCanvas.width = 1;
+probeCanvas.height = 1;
+const probeCtx = probeCanvas.getContext('2d', { willReadFrequently: true });
+
+async function decodePixel(bytes, px, py) {
+  const bitmap = await createImageBitmap(new Blob([bytes]));
+  try {
+    probeCtx.clearRect(0, 0, 1, 1);
+    probeCtx.drawImage(bitmap, -px, -py);
+  } finally {
+    if (bitmap.close) bitmap.close();
+  }
+  const [r, g, b, a] = probeCtx.getImageData(0, 0, 1, 1).data;
+  // A transparent pixel carries no height. So does 0,0,0, which decodes to
+  // -32768 m: terrarium has no nodata value, and that is the floor of the
+  // encoding rather than a place on Earth.
+  if (a === 0 || (r === 0 && g === 0 && b === 0)) return null;
+  return r * 256 + g + b / 256 - 32768;
+}
+
+// ---------------------------------------------------------------------------
+// The protocols
+// ---------------------------------------------------------------------------
+
+// One Protocol instance serves every archive on this page. It keys its open
+// archives by URL, so each GEM-15 build and each Mapterhorn shard gets its own
+// cached header and directories out of the same object.
+const pmtilesProtocol = new pmtiles.Protocol();
+maplibregl.addProtocol('pmtiles', pmtilesProtocol.tile);
+
+function mapterhornArchiveName(z, x, y) {
+  return z <= 12 ? 'planet' : `6-${x >> (z - 6)}-${y >> (z - 6)}`;
+}
+
+// Mapterhorn needs a handler of its own, because its archives are sharded by
+// z6 tile and a request has to be routed to the right file. This is the rule
+// from their README. For a raster archive the protocol answers a missing tile
+// with null data, and MapLibre cannot render that, so the handler rejects
+// instead and MapLibre drops the tile.
+maplibregl.addProtocol('mapterhorn', async (params, abortController) => {
+  const [z, x, y] = params.url.replace('mapterhorn://', '').split('/').map(Number);
+  const name = mapterhornArchiveName(z, x, y);
+  const url = `pmtiles://${MAPTERHORN_BASE}${name}.pmtiles/${z}/${x}/${y}.webp`;
+  const response = await pmtilesProtocol.tile({ ...params, url }, abortController);
+  if (response.data === null) throw new Error(`Mapterhorn tile ${z}/${x}/${y} not found`);
+  return response;
+});
+
+// ---------------------------------------------------------------------------
+// Tile readers for the probe
+//
+// These read one tile outside MapLibre. The probe wants a specific zoom, not
+// whatever zoom the screen happens to be on, so it cannot reuse the rendered
+// tiles. Each reader answers { bytes, note } or null when there is no tile.
+// ---------------------------------------------------------------------------
+
+const archives = new Map();
+
+function archive(url) {
+  let found = archives.get(url);
+  if (!found) {
+    found = new pmtiles.PMTiles(url);
+    archives.set(url, found);
+  }
+  return found;
+}
+
+async function readMapterhornTile(z, x, y) {
+  const name = mapterhornArchiveName(z, x, y);
+  const result = await archive(`${MAPTERHORN_BASE}${name}.pmtiles`).getZxy(z, x, y);
+  return result ? { bytes: result.data, note: `${name}.pmtiles` } : null;
+}
+
+function gem15Reader(area) {
+  const url = `${GEM15_BASE}${area.archive}`;
+  return async (z, x, y) => {
+    const result = await archive(url).getZxy(z, x, y);
+    return result ? { bytes: result.data, note: area.archive } : null;
+  };
+}
+
+// ---------------------------------------------------------------------------
+// The two panes
+//
+// A pane is fixed. Its source definition, its label and its probe plan all
+// come from the current area, and switching areas rewrites all three.
+// ---------------------------------------------------------------------------
+
+// Both panes read 512 px tiles: that is the Mapterhorn tile size, and the
+// GEM-15 builds come out of the same pipeline.
+const TILE_PX = 512;
+
+const PANES = [
+  {
+    id: 'mapterhorn',
+    name: 'Mapterhorn today',
+    // Their own word for the product. Almost every entry in their catalogue is
+    // a national digital terrain model, and one is Copernicus GLO-30.
+    specFor(area) {
+      return {
+        type: 'raster-dem',
+        tiles: ['mapterhorn://{z}/{x}/{y}'],
+        encoding: 'terrarium',
+        tileSize: TILE_PX,
+        minzoom: 0,
+        // Without a shard, planet stops at z12 and asking for z13 would only
+        // produce failed requests. With one, the measured maximum is 16: the
+        // shard header declares 17 and no z17 tile answers over Catalonia.
+        maxzoom: area.shardMaxzoom === null ? 12 : area.shardMaxzoom,
+        attribution: MAPTERHORN_ATTRIBUTION,
+      };
+    },
+    // Walk down from the deepest zoom this area has. The first zoom that
+    // answers wins, and the probe reports which one that was.
+    probeZoomsFor(area) {
+      if (area.shardMaxzoom === null) return [12];
+      const zooms = [];
+      for (let z = area.shardMaxzoom + 1; z >= 12; z--) zooms.push(z);
+      return zooms;
+    },
+    readerFor() { return readMapterhornTile; },
+  },
+  {
+    id: 'gem15',
+    name: 'Mapterhorn pipeline + GEM-15',
+    specFor(area) {
+      return {
+        type: 'raster-dem',
+        url: `pmtiles://${GEM15_BASE}${area.archive}`,
+        encoding: 'terrarium',
+        tileSize: TILE_PX,
+        minzoom: 0,
+        // The measured maximum. A raster-dem source whose maxzoom overstates
+        // the archive asks for tiles that are not there, and the terrain mesh
+        // tears or flattens where they are missing.
+        maxzoom: area.gemMaxzoom,
+        // The header of every one of these archives declares global bounds,
+        // which is wrong about coverage. The footprint decoded from the root
+        // directory is correct, and it keeps MapLibre from requesting tiles
+        // outside the build.
+        bounds: area.coverage,
+        attribution: GEM15_ATTRIBUTION,
+      };
+    },
+    // Full precision lives at the archive maximum and nowhere shallower, so the
+    // probe asks for that zoom and reports nothing if the tile is missing.
+    probeZoomsFor(area) { return [area.gemMaxzoom]; },
+    readerFor(area) { return gem15Reader(area); },
+  },
+];
+
+function paneStyle(pane, area) {
+  return {
+    version: 8,
+    name: `${pane.name}, ${area.label}`,
+    sources: { dem: pane.specFor(area) },
+    layers: [
+      { id: 'background', type: 'background', paint: { 'background-color': BACKGROUND_WITH_TINT } },
+      {
+        id: 'tint',
+        type: 'color-relief',
+        source: 'dem',
+        paint: {
+          'color-relief-color': ['interpolate', ['linear'], ['elevation'], ...ELEVATION_RAMP],
+        },
+      },
+      {
+        id: 'shade',
+        type: 'hillshade',
+        source: 'dem',
+        paint: {
+          'hillshade-method': 'igor',
+          'hillshade-illumination-direction': 335,
+          'hillshade-accent-color': 'rgba(0, 0, 0, 0)',
+          ...HILLSHADE_WITH_TINT,
+        },
+      },
+    ],
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Terrain
+//
+// Every pane style names its elevation source `dem`, so one id raises the mesh
+// in both. Each mesh is built from that pane's own archive, which is the
+// point: at an oblique angle a 15 m surface and a 30 m one are different
+// shapes, not two shadings of one shape.
+//
+// The exaggeration is shared. A per-pane factor would flatter one source and
+// make the panes impossible to read against each other.
+// ---------------------------------------------------------------------------
+
+const TERRAIN_SOURCE = 'dem';
+const TILT_PITCH = 60;
+
+let terrainExaggeration = 1;
+
+// getSource answers undefined until the style is in, so this is safe to call
+// at any time and the caller needs no readiness check of its own.
+function applyTerrainTo(map) {
+  if (!map.getSource(TERRAIN_SOURCE)) return;
+  map.setTerrain({ source: TERRAIN_SOURCE, exaggeration: terrainExaggeration });
+}
+
+// ---------------------------------------------------------------------------
+// Build the panes
+// ---------------------------------------------------------------------------
+
+let currentArea = AREAS[0];
+
+const panesHost = document.getElementById('panes');
+const maps = [];
+
+for (const pane of PANES) {
+  const section = document.createElement('section');
+  section.className = 'pane';
+  section.innerHTML = `
+    <div class="pane-map"></div>
+    <div class="pane-label">
+      <h2>${pane.name}<span class="model"></span></h2>
+      <p></p>
+    </div>
+    <div class="pane-note" role="status"></div>
+  `;
+  panesHost.appendChild(section);
+
+  const map = new maplibregl.Map({
+    container: section.querySelector('.pane-map'),
+    style: paneStyle(pane, currentArea),
+    center: currentArea.center,
+    zoom: currentArea.zoom,
+    // Set together with the style on every area switch, so a reader cannot pan
+    // off the GEM-15 build or into a Mapterhorn shard this page has not
+    // measured.
+    maxBounds: boxOf(currentArea.view),
+    minZoom: 8,
+    maxZoom: currentArea.mapMaxZoom,
+    // No URL hash here. Three areas share one page, and a hash written by one
+    // area would reopen the page on a centre that belongs to another.
+    attributionControl: false,
+    // Flat and north up at rest, because most of the comparison is read from
+    // above. Rotation and pitch stay available, because the surfaces differ in
+    // ways that only an oblique view shows.
+    pitch: 0,
+    bearing: 0,
+    // MapLibre's own default maxPitch is 60. 75 allows a lower profile across
+    // a ridge, which is where two meshes separate most.
+    maxPitch: 75,
+    dragRotate: true,
+    pitchWithRotate: true,
+    touchZoomRotate: true,
+    touchPitch: true,
+  });
+
+  // Attribution on every pane, because each pane draws a different source and
+  // the credit has to sit with the thing it credits.
+  map.addControl(new maplibregl.AttributionControl({ compact: true }), 'bottom-right');
+  if (pane.id === PANES[0].id) {
+    // The compass earns its place now that the panes rotate, and it doubles as
+    // the way back to north up and flat. One control drives both panes, because
+    // the sync below carries this pane's view to the other.
+    map.addControl(
+      new maplibregl.NavigationControl({ showCompass: true, visualizePitch: true }),
+      'top-right',
+    );
+    map.addControl(new maplibregl.ScaleControl({ unit: 'metric' }), 'bottom-left');
+  }
+
+  // Each pane raises its own mesh from the same raster-dem source it draws.
+  // style.load fires again after every area switch, which is exactly when the
+  // mesh and the surface mode have to be restored.
+  map.on('style.load', () => {
+    applyTerrainTo(map);
+    applyModeTo(map, currentMode());
+  });
+
+  const note = section.querySelector('.pane-note');
+  let failures = 0;
+  map.on('error', (event) => {
+    const message = event && event.error ? event.error.message : String(event);
+    console.warn(`${pane.name}:`, message);
+    // One missing tile at a coverage edge is normal. A run of them means the
+    // host is not answering, and a reader deserves to be told rather than left
+    // to read an empty pane as a real absence of terrain.
+    failures += 1;
+    if (failures > 6) {
+      note.textContent = `${pane.name} tiles are not answering.`;
+      note.classList.add('show');
+    }
+  });
+
+  pane.map = map;
+  pane.section = section;
+  pane.labelModel = section.querySelector('.pane-label .model');
+  pane.labelBlurb = section.querySelector('.pane-label p');
+  pane.note = note;
+  pane.clearNote = () => { failures = 0; note.classList.remove('show'); };
+  maps.push(map);
+}
+
+// MapLibre wants [[w, s], [e, n]] and the area boxes are stored flat.
+function boxOf(view) {
+  return [[view[0], view[1]], [view[2], view[3]]];
+}
+
+// ---------------------------------------------------------------------------
+// Keep the panes on the same view
+//
+// All four camera numbers travel together: centre, zoom, bearing and pitch.
+// Two guards keep one gesture from turning into a loop, and they catch
+// different cases.
+//
+// 1. `syncing` drops the move events a follower fires while the sync moves it.
+//    MapLibre delivers those inside the jumpTo call rather than on a later
+//    frame, so they land while the flag is still set.
+//
+// 2. `lastView` is what pitch and bearing need. One drag-rotate reports itself
+//    to the origin pane as a move, a rotate and a pitch, each a separate event
+//    with the same transform behind it. The flag cannot drop those, because
+//    they arrive one after another rather than nested. So the sync compares
+//    against the view it pushed last and does nothing when the camera has not
+//    actually moved. The comparison carries a tolerance rather than testing
+//    for equality: MapLibre keeps a bearing and a pitch in radians and reports
+//    them in degrees, so a set-then-read round trip is inexact.
+// ---------------------------------------------------------------------------
+
+let syncing = false;
+let lastView = null;
+
+function viewOf(map) {
+  const center = map.getCenter();
+  return {
+    lng: center.lng,
+    lat: center.lat,
+    zoom: map.getZoom(),
+    bearing: map.getBearing(),
+    pitch: map.getPitch(),
+  };
+}
+
+// The thresholds are all far below anything a reader can see. 1e-9 degrees is
+// about 0.1 mm on the ground, and 1e-6 degrees of bearing is nothing at all.
+function sameView(a, b) {
+  return a !== null && b !== null
+    && Math.abs(a.lng - b.lng) < 1e-9
+    && Math.abs(a.lat - b.lat) < 1e-9
+    && Math.abs(a.zoom - b.zoom) < 1e-9
+    && Math.abs(a.bearing - b.bearing) < 1e-6
+    && Math.abs(a.pitch - b.pitch) < 1e-6;
+}
+
+function syncFrom(origin) {
+  if (syncing) return;
+  const view = viewOf(origin);
+  if (sameView(view, lastView)) return;
+  lastView = view;
+  syncing = true;
+  try {
+    for (const map of maps) {
+      if (map === origin) continue;
+      map.jumpTo({
+        center: [view.lng, view.lat],
+        zoom: view.zoom,
+        bearing: view.bearing,
+        pitch: view.pitch,
+      });
+    }
+  } finally {
+    syncing = false;
+  }
+}
+
+// A rotate and a pitch each fire a move event as well in this version, so
+// `move` alone would carry them. The other two listeners are there in case that
+// stops being true, and they cost nothing, because the duplicate they bring in
+// dies at the `sameView` check before it reaches a terrain mesh.
+for (const map of maps) {
+  for (const type of ['move', 'rotate', 'pitch']) {
+    map.on(type, () => syncFrom(map));
+  }
+}
+
+// A map that never moves fires no move event, so the second pane is lined up
+// once the first is up.
+maps[0].once('load', () => syncFrom(maps[0]));
+
+function flyAll(place) {
+  // One map flies and the move handler carries the other, so the two stay
+  // locked together for every frame. A preset keeps whatever pitch and bearing
+  // the reader has set.
+  maps[0].flyTo({ center: place.center, zoom: place.zoom, duration: 1400, essential: true });
+}
+
+// ---------------------------------------------------------------------------
+// Switching area
+//
+// Three things change together: the style of each pane, the camera limits, and
+// everything in the bar that names a place.
+//
+// The camera limits are the awkward part. maxBounds clamps the camera, so the
+// new box cannot be set before the flight: a fly from Barcelona to Cusco
+// inside the Cusco box would never leave Barcelona. So the box is cleared,
+// the panes fly, and the new box goes on when they land. A token guards that,
+// because a reader can switch area again mid-flight.
+// ---------------------------------------------------------------------------
+
+const explainer = document.getElementById('explainer');
+const placesHost = document.getElementById('places');
+
+let arrivalToken = 0;
+
+function applyArea(area, { initial = false } = {}) {
+  currentArea = area;
+  arrivalToken += 1;
+  const token = arrivalToken;
+
+  for (const pane of PANES) {
+    const face = pane.id === 'mapterhorn' ? area.left : area.right;
+    pane.labelModel.textContent = face.model;
+    pane.labelBlurb.textContent = face.blurb;
+    pane.probeZooms = pane.probeZoomsFor(area);
+    pane.readTile = pane.readerFor(area);
+    pane.clearNote();
+    if (!initial) {
+      // diff: false rather than a style diff. The source definition changes in
+      // every field that matters, and a full reload is the predictable path.
+      // Terrain and the surface mode come back on style.load.
+      pane.map.setStyle(paneStyle(pane, area), { diff: false });
+      pane.map.setMaxBounds(null);
+      pane.map.setMaxZoom(area.mapMaxZoom);
+    }
+  }
+
+  explainer.innerHTML = area.explainer;
+  buildPlaces(area);
+  buildLegend(area);
+  clearProbe();
+
+  if (initial) return;
+
+  // The listener goes on before the flight starts, not after. MapLibre ends a
+  // flight on a later frame, so either order works here, but a flight that
+  // ended inside the call would slip past a listener added behind it.
+  maps[0].once('moveend', () => {
+    if (token !== arrivalToken) return;
+    for (const map of maps) map.setMaxBounds(boxOf(area.view));
+  });
+  // The panes are synced, so one flight carries both.
+  maps[0].flyTo({ center: area.center, zoom: area.zoom, duration: 2000, essential: true });
+}
+
+for (const radio of document.querySelectorAll('input[name="area"]')) {
+  radio.addEventListener('change', () => {
+    const area = areaById.get(radio.value);
+    if (area && radio.checked) applyArea(area);
+  });
+}
+
+// ---------------------------------------------------------------------------
+// The bar: surface mode
+// ---------------------------------------------------------------------------
+
+function setPaint(map, layer, props) {
+  for (const [key, value] of Object.entries(props)) {
+    map.setPaintProperty(layer, key, value);
+  }
+}
+
+function currentMode() {
+  return document.getElementById('mode-tint').checked;
+}
+
+// Every call below throws while the style is still in flight, and a reader can
+// hit the switch inside that first moment or during an area switch.
+//
+// The guard asks for the layer rather than calling isStyleLoaded. MapLibre
+// counts a style as loaded only once every source cache behind it is loaded
+// too, and a raster-dem source cache is still fetching tiles when style.load
+// fires. So isStyleLoaded is false at exactly the moment this has to run,
+// while the layer the call touches is already there.
+function applyModeTo(map, tint) {
+  if (!map.getLayer('tint')) return;
+  map.setLayoutProperty('tint', 'visibility', tint ? 'visible' : 'none');
+  map.setPaintProperty('background', 'background-color',
+    tint ? BACKGROUND_WITH_TINT : BACKGROUND_ALONE);
+  setPaint(map, 'shade', tint ? HILLSHADE_WITH_TINT : HILLSHADE_ALONE);
+}
+
+for (const radio of document.querySelectorAll('input[name="mode"]')) {
+  radio.addEventListener('change', () => {
+    for (const map of maps) applyModeTo(map, currentMode());
+  });
+}
+
+// ---------------------------------------------------------------------------
+// The bar: tilt and relief
+// ---------------------------------------------------------------------------
+
+const tiltButton = document.getElementById('tilt');
+const exaggerationInput = document.getElementById('exaggeration');
+const exaggerationValue = document.getElementById('exaggeration-value');
+
+// The button drives the first pane only. The sync above carries the pitch to
+// the other, which also keeps the animation locked across the two.
+tiltButton.addEventListener('click', () => {
+  const flat = maps[0].getPitch() < 5;
+  maps[0].easeTo({ pitch: flat ? TILT_PITCH : 0, duration: 700, essential: true });
+});
+
+// A right-drag tilts the panes without touching the button, so the button reads
+// the pitch rather than holding a state of its own. The label stays "3D" and
+// only the pressed state changes, which is what a screen reader announces and
+// what the accent fill shows.
+function refreshTiltButton() {
+  tiltButton.setAttribute('aria-pressed', maps[0].getPitch() >= 5 ? 'true' : 'false');
+}
+
+maps[0].on('pitch', refreshTiltButton);
+maps[0].on('pitchend', refreshTiltButton);
+maps[0].once('load', refreshTiltButton);
+
+function applyExaggeration() {
+  terrainExaggeration = Number(exaggerationInput.value);
+  exaggerationValue.textContent = `${terrainExaggeration.toFixed(1)}×`;
+  for (const map of maps) applyTerrainTo(map);
+}
+
+exaggerationInput.addEventListener('input', applyExaggeration);
+
+// ---------------------------------------------------------------------------
+// The bar: legend and presets
+// ---------------------------------------------------------------------------
+
+// The legend reads the ramp itself, so it can never drift from the colours on
+// screen. Its top is per area, because 2400 m covers Catalonia and would clip
+// most of the Cusco box.
+const legendStrip = document.getElementById('legend-strip');
+const legendTicks = document.getElementById('legend-ticks');
+
+function buildLegend(area) {
+  const min = 0;
+  const max = area.legendMax;
+  const stops = [];
+  for (let i = 0; i < ELEVATION_RAMP.length; i += 2) {
+    stops.push([ELEVATION_RAMP[i], ELEVATION_RAMP[i + 1]]);
+  }
+  const inside = stops.filter(([h]) => h >= min && h <= max);
+  const parts = inside.map(([h, color]) => {
+    const pct = (h - min) / (max - min) * 100;
+    return `${color} ${pct.toFixed(1)}%`;
+  });
+  legendStrip.style.background = `linear-gradient(to right, ${parts.join(', ')})`;
+  legendTicks.innerHTML = [min, Math.round(max / 2), max]
+    .map((h) => `<span>${h}</span>`).join('');
+}
+
+function buildPlaces(area) {
+  for (const stale of placesHost.querySelectorAll('button')) stale.remove();
+  for (const place of area.places) {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.textContent = place.label;
+    button.title = place.hint;
+    button.addEventListener('click', () => flyAll(place));
+    placesHost.appendChild(button);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// The elevation probe
+//
+// One click, two sources, each read at the best zoom it has here. The panel
+// prints the elevation, the zoom it came from, the ground resolution of that
+// zoom, the tile and the archive, and then the difference between the two.
+// ---------------------------------------------------------------------------
+
+const probe = document.getElementById('probe');
+const probeGrid = document.getElementById('probe-grid');
+const probePos = document.getElementById('probe-pos');
+const probeDeltas = document.getElementById('probe-deltas');
+const hint = document.getElementById('hint');
+
+const cards = new Map();
+for (const pane of PANES) {
+  const card = document.createElement('article');
+  card.className = 'card';
+  card.innerHTML = `
+    <h3>${pane.name}</h3>
+    <p class="elev pending">—</p>
+    <p class="meta"></p>
+  `;
+  probeGrid.appendChild(card);
+  cards.set(pane.id, {
+    elev: card.querySelector('.elev'),
+    meta: card.querySelector('.meta'),
+  });
+}
+
+const markers = new Map();
+
+function showMarkers(lngLat) {
+  for (const pane of PANES) {
+    let marker = markers.get(pane.id);
+    if (!marker) {
+      marker = new maplibregl.Marker({ color: '#c0392b', scale: 0.7 });
+      markers.set(pane.id, marker);
+    }
+    marker.setLngLat(lngLat).addTo(pane.map);
+  }
+}
+
+function resizeMaps() {
+  // The probe strip takes height off the panes. MapLibre watches its own
+  // container, but an explicit resize keeps the canvases exact rather than one
+  // frame behind.
+  requestAnimationFrame(() => { for (const map of maps) map.resize(); });
+}
+
+function clearProbe() {
+  for (const marker of markers.values()) marker.remove();
+  probe.hidden = true;
+  hint.hidden = false;
+  resizeMaps();
+}
+
+document.getElementById('probe-clear').addEventListener('click', clearProbe);
+
+function metres(value) {
+  return `${value >= 0 ? '' : '−'}${Math.abs(value).toFixed(2)} m`;
+}
+
+// One source at one point. Walks its candidate zooms, deepest first, and
+// returns the first zoom that yields a real pixel. Every failure path ends in
+// null, which the panel draws as an em dash.
+async function probePane(pane, lon, lat) {
+  const tried = [];
+  for (const z of pane.probeZooms) {
+    const { x, y, px, py } = tileCoords(lon, lat, z, TILE_PX);
+    let tile;
+    try {
+      tile = await pane.readTile(z, x, y);
+    } catch (error) {
+      tried.push(`z${z} failed`);
+      console.warn(`${pane.name} probe z${z}:`, error);
+      continue;
+    }
+    if (!tile) {
+      tried.push(`z${z} empty`);
+      continue;
+    }
+    let elevation;
+    try {
+      elevation = await decodePixel(tile.bytes, px, py);
+    } catch (error) {
+      tried.push(`z${z} undecodable`);
+      console.warn(`${pane.name} decode z${z}:`, error);
+      continue;
+    }
+    if (elevation === null) {
+      tried.push(`z${z} nodata`);
+      continue;
+    }
+    return {
+      elevation,
+      zoom: z,
+      resolution: groundRes(lat, z, TILE_PX),
+      tile: `${z}/${x}/${y}`,
+      note: tile.note,
+      tried,
+    };
+  }
+  return { elevation: null, tried };
+}
+
+let probeToken = 0;
+
+async function runProbe(lngLat) {
+  const token = ++probeToken;
+  const lon = lngLat.lng;
+  const lat = lngLat.lat;
+
+  probe.hidden = false;
+  hint.hidden = true;
+  resizeMaps();
+  showMarkers(lngLat);
+  probePos.textContent =
+    `${Math.abs(lat).toFixed(5)}°${lat >= 0 ? 'N' : 'S'}  ` +
+    `${Math.abs(lon).toFixed(5)}°${lon >= 0 ? 'E' : 'W'}`;
+  probeDeltas.textContent = '';
+  for (const pane of PANES) {
+    const card = cards.get(pane.id);
+    card.elev.textContent = 'reading…';
+    card.elev.classList.add('pending');
+    card.meta.textContent = '';
+  }
+
+  const results = await Promise.all(PANES.map(async (pane) => {
+    const result = await probePane(pane, lon, lat);
+    // A reader who clicks again while this is in flight gets the new point, not
+    // whichever request happened to finish last.
+    if (token !== probeToken) return result;
+    const card = cards.get(pane.id);
+    if (result.elevation === null) {
+      card.elev.textContent = '—';
+      card.elev.classList.add('pending');
+      // Say which zooms were tried and how each one came back. "no value" on
+      // its own leaves a reader guessing between a hole in the data, a dead
+      // host and a bug on this page.
+      card.meta.textContent = `no value · ${result.tried.join(', ')}`;
+      return result;
+    }
+    card.elev.textContent = metres(result.elevation);
+    card.elev.classList.remove('pending');
+    const parts = [
+      `z${result.zoom}, ${result.resolution.toFixed(2)} m per pixel`,
+      `tile ${result.tile}`,
+    ];
+    if (result.note) parts.push(result.note);
+    card.meta.textContent = parts.join(' · ');
+    return result;
+  }));
+
+  if (token !== probeToken) return;
+
+  const [left, right] = results.map((result) => result.elevation);
+  const delta = left === null || right === null
+    ? '—'
+    : `${right - left >= 0 ? '+' : '−'}${Math.abs(right - left).toFixed(2)} m`;
+  probeDeltas.innerHTML =
+    `<span>GEM-15 − Mapterhorn today: ${delta}</span>` +
+    '<span>GEM-15 is a surface model, so a positive difference over a ' +
+    'building or a canopy is signal rather than error</span>';
+}
+
+// With terrain set, MapLibre unprojects a click against the mesh rather than
+// against the flat plane, so `event.lngLat` is the point on the surface that
+// the reader actually clicked. Nothing in the probe assumes a pitch of 0: it
+// takes a longitude and a latitude and reads tiles by itself.
+//
+// A tilted pane does add one case that a flat one cannot produce. A click on
+// the sky, or past the terrain horizon, lands far outside the view, and no
+// point out there has two sources to compare. Those clicks are dropped rather
+// than answered with two em dashes.
+function insideCoverage(lngLat) {
+  const [w, s, e, n] = currentArea.coverage;
+  return lngLat.lng >= w && lngLat.lng <= e && lngLat.lat >= s && lngLat.lat <= n;
+}
+
+for (const pane of PANES) {
+  pane.map.on('click', (event) => {
+    if (!insideCoverage(event.lngLat)) return;
+    runProbe(event.lngLat);
+  });
+  pane.map.getCanvas().style.cursor = 'crosshair';
+}
+
+// ---------------------------------------------------------------------------
+// Open on the first area
+// ---------------------------------------------------------------------------
+
+applyExaggeration();
+applyArea(AREAS[0], { initial: true });
+</script>
+</body>
+</html>
