@@ -1,0 +1,65 @@
+# Mapterhorn pipeline over GEM-15: three test areas
+
+> An experiment, not a Mapterhorn release. Three terrarium-encoded terrain
+> PMTiles archives, built by running GEM-15 elevation COGs through the
+> Mapterhorn terrain pipeline from an unmerged fork
+> (github.com/cholmes/mapterhorn, branch gem-15-source, built at commit
+> 86d8494, forked from upstream main at 2c4195d). The Mapterhorn project
+> did not review, merge or endorse them. Built and measured 2026-11-15.
+
+Key facts
+
+- Three areas: Catalonia (4 GEM-15 cells, max zoom 12), Cusco (1 cell, 13),
+  High Atlas (1 cell, 13). Built in 28 m 07 s total.
+- Encoding: Mapzen terrarium, 512 px lossless WebP, PMTiles spec v3,
+  clustered, minimum zoom 0. Decode with
+  elevation = (R * 256 + G + B / 256) − 32768.
+- MapLibre: `raster-dem` source, `"encoding": "terrarium"`,
+  `"tileSize": 512` (not 256), `maxzoom` per archive.
+- **The PMTiles header bounds are the whole world in all three files**, a
+  defect of the fork's bundle_area.py. Use the collection extent instead.
+  Tiles present: Catalonia 0 to 5.625E / 36.598 to 45.089N; Cusco 73.125W to
+  70.3125W / 16.636S to 11.178S; High Atlas 8.4375W to 5.625W / 29.535N to
+  34.307N. Real elevation covers only the one-degree GEM-15 cells inside.
+- Terrarium has no nodata value, so tiles outside those cells read 0 m.
+  Most of the ~10,930 tiles in each archive are such flat tiles, so tile
+  count says nothing about coverage.
+- GEM-15's voids (water plus a 9 m buffer, and more) are filled from
+  Copernicus GLO-30 at 30 m, converted EGM2008 to EGM96, feathered 3 px.
+  Filled pixels are unmarked. Draw with these; measure with the gem-15 COGs.
+- Heights are orthometric on the EGM96 geoid (EPSG:5773), not ellipsoidal
+  and not EGM2008.
+- The finding: Mapterhorn's maxzoom rule gives a 15 m source zoom 13 only
+  below about 38.3 degrees of latitude. Catalonia therefore lands at zoom 12,
+  the same depth GLO-30 gets there. Zoom 14 depth is unreachable for a 15 m
+  source at any latitude under that rule.
+- Probes decoded from the published archives, 2026-11-15: Sau reservoir
+  403.50 m (NaN in GEM-15, so the void fill ran), Montserrat 702.00 m,
+  Cusco 1973.75 m, Toubkal summit 4108.50 m.
+- Each archive's own PMTiles metadata declares only
+  `attribution: "© Mapterhorn"`. Set the full attribution yourself.
+- Licences: CC-BY-4.0 with "This dataset is produced by Google"; the
+  Copernicus WorldDEM-30 Article 6(b) modified-data notice; BSD-3 credit for
+  the Mapterhorn pipeline, as a tool, from an unmerged fork.
+
+Key URLs
+
+- Collection: https://data.source.coop/portolan-mirrors/gem-15-catalog/mapterhorn-gem15/collection.json
+- Catalonia: https://data.source.coop/portolan-mirrors/gem-15-catalog/mapterhorn-gem15/mapterhorn-gem15-barcelona.pmtiles
+- Cusco: https://data.source.coop/portolan-mirrors/gem-15-catalog/mapterhorn-gem15/mapterhorn-gem15-cusco.pmtiles
+- High Atlas: https://data.source.coop/portolan-mirrors/gem-15-catalog/mapterhorn-gem15/mapterhorn-gem15-atlas.pmtiles
+- Elevation source collection: https://data.source.coop/portolan-mirrors/gem-15-catalog/gem-15/collection.json
+- Live comparison: https://portolan-mirrors.github.io/gem-15-catalog/maplibre-terrain/mapterhorn-gem15.html
+- The fork and its notes: https://github.com/cholmes/mapterhorn/blob/gem-15-source/NOTES.md
+- The issue that prompted it: https://github.com/mapterhorn/mapterhorn/issues/368
+- GEM-15 preprint: https://doi.org/10.31223/X55N75
+
+Documentation
+
+- [AGENTS.md](AGENTS.md): footprints, a runnable tile-decoding recipe, and
+  the quirks that produce silently wrong answers. Read this before writing
+  code against the archives.
+- [README.md](README.md): the experiment, the per-area table, the maxzoom
+  result, the probe readings, a MapLibre snippet, and the attribution stack.
+- [collection.json](collection.json): STAC 1.1 metadata, three archive
+  assets with file sizes and checksums, three styles, and a thumbnail.

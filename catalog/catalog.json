@@ -25,6 +25,12 @@
       "title": "GEM-15: Surface and Terrain Elevation at 15 m"
     },
     {
+      "rel": "child",
+      "href": "./mapterhorn-gem15/collection.json",
+      "type": "application/json",
+      "title": "Mapterhorn pipeline over GEM-15: three test areas"
+    },
+    {
       "rel": "describedby",
       "href": "./README.md",
       "type": "text/markdown",

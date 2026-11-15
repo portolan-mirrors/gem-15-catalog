@@ -8,14 +8,19 @@ page.
 
 ## What is here
 
-One collection.
-
 | Collection | Items | Grid | Coverage | What it is |
 |---|---|---|---|---|
 | [`gem-15`](gem-15/README.md) | 13,485 one-degree cells | 15 m | 84°N–61°S | A 5-band Digital Surface Model and a co-registered 1-band bare-earth Digital Terrain Model, from sub-meter optical stereo imagery |
+| [`mapterhorn-gem15`](mapterhorn-gem15/README.md) | none | 512 px terrarium tiles | 3 test areas | An experiment: GEM-15 run through the Mapterhorn terrain pipeline on an unmerged fork, as three small PMTiles archives over Catalonia, Cusco and the High Atlas |
 
-The 26,970 Cloud-Optimized GeoTIFFs behind those items, about 12.3 TB, stay in
-Google's public bucket and are referenced there. What this catalog publishes is
+The second collection is a measurement rather than a product. It answers
+[mapterhorn#368](https://github.com/mapterhorn/mapterhorn/issues/368) and is
+neither a Mapterhorn release nor endorsed by that project. Its
+[README](mapterhorn-gem15/README.md) gives the result, which is about how the
+pipeline picks a maximum zoom.
+
+The 26,970 Cloud-Optimized GeoTIFFs behind the `gem-15` items, about 12.3 TB,
+stay in Google's public bucket and are referenced there. What this catalog publishes is
 the metadata, an index of every cell as STAC-GeoParquet, a global overview image,
 terrarium-encoded terrain tiles for MapLibre, three MapLibre styles, and the
 documentation. The collection's [README](gem-15/README.md) covers bands,

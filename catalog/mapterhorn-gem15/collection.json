@@ -1,0 +1,301 @@
+{
+  "type": "Collection",
+  "stac_version": "1.1.0",
+  "stac_extensions": [
+    "https://schemas.portolan-sdi.org/portolan/v0.2.0/schema.json",
+    "https://stac-extensions.github.io/file/v2.1.0/schema.json",
+    "https://stac-extensions.github.io/processing/v1.2.0/schema.json",
+    "https://stac-extensions.github.io/scientific/v1.0.0/schema.json",
+    "https://stac-extensions.github.io/version/v1.2.0/schema.json",
+    "https://stac-extensions.github.io/web-map-links/v1.3.0/schema.json"
+  ],
+  "id": "mapterhorn-gem15",
+  "title": "Mapterhorn pipeline over GEM-15: three test areas",
+  "description": "**An experiment, and not a Mapterhorn release.** Three small terrain-tile archives built by running GEM-15 elevation COGs through the [Mapterhorn](https://mapterhorn.com/) terrain pipeline, from an **unmerged fork** at [cholmes/mapterhorn, branch `gem-15-source`](https://github.com/cholmes/mapterhorn/tree/gem-15-source) (archives built at commit `86d8494`, forked from upstream `main` at `2c4195d`). The Mapterhorn project has not reviewed, merged or endorsed any of this, and no pull request was opened upstream. Nothing here is Mapterhorn data. The pipeline code is BSD-3-licensed and is credited as a tool, not as a publisher.\n\n**Why it exists.** Mapterhorn issue [#368](https://github.com/mapterhorn/mapterhorn/issues/368), \"Thoughts on Google's GEM-15 being used as the baseline model?\", records a maintainer suggesting that somebody \"run the Mapterhorn terrain pipeline with some of the google tiffs\". This collection is that run, for three areas chosen to answer a specific question: what does a global 15 m optical source actually add to a terrain archive whose deepest zoom is decided by a resolution rule?\n\n**The answer, which is the point of the experiment.** Mapterhorn's `get_smallest_overzoom` picks the first zoom whose 512 px Web Mercator tile pixel fully samples the source, then clamps up to z12. A ground pixel of 15 m occupies 15 / cos(latitude) metres of EPSG:3857, and the z12 tile pixel is 19.11 m, so a 15 m source only crosses into z13 below about 38.3 degrees of latitude. Over Catalonia, GEM-15 therefore produces z12, the same depth the pipeline already produces there from 30 m Copernicus GLO-30: finer content inside the tiles, no extra zoom level. Over Cusco and the High Atlas, both below that latitude, GEM-15 produces z13, one level deeper than Mapterhorn publishes in those places today. A depth equivalent to z14 is unreachable for a 15 m source under this rule at any latitude.\n\n**The three areas.** Catalonia (4 one-degree GEM-15 cells, z12) covers Barcelona, Montserrat and the Sau reservoir, and overlaps this catalog's own terrain demo so the two can be compared. Cusco in Peru (1 cell, z13) and the High Atlas around Toubkal in Morocco (1 cell, z13) were picked because Mapterhorn production holds no source finer than GLO-30 there, which was verified against Mapterhorn's own published coverage index, its archive manifest and its attribution list.\n\n**Encoding.** Mapzen terrarium in 512 px lossless WebP tiles, PMTiles specification v3, clustered, zoom 0 to the per-area maximum. Decode with elevation = (R * 256 + G + B / 256) \u2212 32768. MapLibre reads each archive as a `raster-dem` source with `\"encoding\": \"terrarium\"` and `\"tileSize\": 512`. Set `maxzoom` per archive: 12 for Catalonia, 13 for Cusco and the High Atlas.\n\n**Void fill, and the licence consequence.** GEM-15 masks water plus a 9 m buffer, so the Sau reservoir is NaN in the source and a naive build renders it as a flat 0 m pit. The fork fills GEM-15's nodata from Copernicus GLO-30 before tiling, with an EGM2008-to-EGM96 geoid correction applied inside the fill and a 3 px feather toward GEM-15's own nearest valid value. Filled pixels are GLO-30 at 30 m, not GEM-15 at 15 m, and nothing in the tiles marks them. Because filled pixels derive from GLO-30, every archive needs the Copernicus modified-data notice below in addition to the GEM-15 attribution.\n\n**Status.** Experimental and frozen. These archives are a point measurement from 2026-11-15, not a maintained layer, and they will not track upstream Mapterhorn or a new GEM-15 release. Use them to draw and to compare, and read the item COGs in the [`gem-15`](../gem-15/collection.json) collection for heights.\n\nAgents should start at [AGENTS.md](AGENTS.md); people should start at [README.md](README.md).",
+  "version": "1.0",
+  "experimental": true,
+  "keywords": [
+    "elevation",
+    "DEM",
+    "DSM",
+    "terrain",
+    "terrarium",
+    "PMTiles",
+    "raster-dem",
+    "MapLibre",
+    "hillshade",
+    "Mapterhorn",
+    "GEM-15",
+    "experiment"
+  ],
+  "license": "CC-BY-4.0",
+  "providers": [
+    {
+      "name": "Google Research",
+      "description": "Produced GEM-15, the elevation source these archives are tiled from, and publishes it as COGs with its own STAC.",
+      "roles": [
+        "producer",
+        "licensor"
+      ],
+      "url": "https://research.google/"
+    },
+    {
+      "name": "Portolan Mirrors",
+      "description": "Ran the forked Mapterhorn pipeline, published the three archives, and maintains this metadata. Not affiliated with the Mapterhorn project.",
+      "roles": [
+        "processor",
+        "host"
+      ],
+      "url": "https://github.com/portolan-mirrors/gem-15-catalog"
+    }
+  ],
+  "extent": {
+    "spatial": {
+      "bbox": [
+        [
+          -73.125,
+          -16.636,
+          5.625,
+          45.089
+        ],
+        [
+          0.0,
+          36.598,
+          5.625,
+          45.089
+        ],
+        [
+          -73.125,
+          -16.636,
+          -70.3125,
+          -11.178
+        ],
+        [
+          -8.4375,
+          29.535,
+          -5.625,
+          34.307
+        ]
+      ]
+    },
+    "temporal": {
+      "interval": [
+        [
+          "2022-01-01T00:00:00Z",
+          "2024-12-31T23:59:59Z"
+        ]
+      ]
+    }
+  },
+  "assets": {
+    "terrain-barcelona": {
+      "href": "./mapterhorn-gem15-barcelona.pmtiles",
+      "type": "application/vnd.pmtiles",
+      "title": "Catalonia terrain tiles, zoom 0 to 12 (terrarium)",
+      "description": "GEM-15 DSM over 4 one-degree cells in UTM zone 31N (w1s41, w2s41, w3s40, w3s41), covering Barcelona, Montserrat and the Sau reservoir. Terrarium-encoded 512 px lossless WebP tiles, zoom 0 to 12, 10,931 tiles, clustered, PMTiles specification v3. Read it as a MapLibre `raster-dem` source with `\"encoding\": \"terrarium\"`, `\"tileSize\": 512` and `\"maxzoom\": 12`. Decode a pixel with elevation = (R * 256 + G + B / 256) \u2212 32768. Zoom 12 is the deepest zoom Mapterhorn's own resolution rule allows a 15 m source at this latitude, which is also what the pipeline reaches here from 30 m GLO-30. Do not trust the PMTiles header bounds: the fork's bundle_area.py writes the whole world (-180 to 180, -85.05 to 85.05) into every archive it builds, which is a defect of this experimental build. The tiles actually present span 0 to 5.625 degrees east and 36.598 to 45.089 degrees north, the tile-aligned aggregation blocks the pipeline built, and real GEM-15 elevation exists only over the four one-degree cells inside that footprint. Terrarium has no nodata value, so every other tile in the archive encodes as 0 m. GEM-15's own voids, water plus a 9 m buffer among them, are filled from Copernicus GLO-30 before encoding, converted EGM2008 to EGM96 and feathered toward GEM-15's nearest valid value over 3 px. A filled pixel is GLO-30 at 30 m, not GEM-15 at 15 m, and nothing in the tiles marks it: draw with these, measure with the gem-15 item COGs. Void-filling requires this notice: \"produced using Copernicus WorldDEM-30 \u00a9 DLR e.V. 2010-2014 and \u00a9 Airbus Defence and Space GmbH 2014-2018 provided under COPERNICUS by the European Union and ESA; all rights reserved\". The archive's own PMTiles metadata declares only `attribution`, set by the pipeline to \"\u00a9 Mapterhorn\", which is the tool credit and not the data attribution: a client must state the GEM-15 and Copernicus notices itself.",
+      "roles": [
+        "data",
+        "visual"
+      ],
+      "file:size": 42064200,
+      "file:checksum": "1220d12639740d320357c4d9e77e8443abc3ff9c1246c650eb1c4c77671310e5a49a",
+      "processing:software": {
+        "mapterhorn": "gem-15-source@86d8494"
+      },
+      "processing:lineage": "Built 2026-11-15 in 9 m 13 s on the forked Mapterhorn pipeline: band 1 of each GEM-15 DSM COG downloaded and extracted (source_gem15_download.py), nodata filled from Copernicus GLO-30 with an EGM2008-to-EGM96 correction and a 3 px feather (source_fill_nodata_glo30.py), bounds written (source_bounds.py), then the pipeline's own unmodified aggregation and downsampling stages, then bundled to one archive (bundle_area.py). Maximum zoom chosen by the pipeline's own get_smallest_overzoom, not set by hand."
+    },
+    "terrain-cusco": {
+      "href": "./mapterhorn-gem15-cusco.pmtiles",
+      "type": "application/vnd.pmtiles",
+      "title": "Cusco terrain tiles, zoom 0 to 13 (terrarium)",
+      "description": "GEM-15 DSM over 1 one-degree cell in UTM zone 18S (wm73sm14), covering Cusco, Machu Picchu and the Salcantay massif. Terrarium-encoded 512 px lossless WebP tiles, zoom 0 to 13, 10,929 tiles, clustered, PMTiles specification v3. Read it as a MapLibre `raster-dem` source with `\"encoding\": \"terrarium\"`, `\"tileSize\": 512` and `\"maxzoom\": 13`. Decode a pixel with elevation = (R * 256 + G + B / 256) \u2212 32768. Zoom 13 is one level deeper than Mapterhorn publishes here today, because its production aggregation holds nothing finer than 30 m GLO-30 over this cell. Do not trust the PMTiles header bounds: the fork's bundle_area.py writes the whole world (-180 to 180, -85.05 to 85.05) into every archive it builds, which is a defect of this experimental build. The tiles actually present span -73.125 to -70.3125 degrees east and -16.636 to -11.178 degrees north, the tile-aligned aggregation blocks the pipeline built, and real GEM-15 elevation exists only over the one one-degree cell inside that footprint. Terrarium has no nodata value, so every other tile in the archive encodes as 0 m. GEM-15's own voids are filled from Copernicus GLO-30 before encoding, converted EGM2008 to EGM96 and feathered toward GEM-15's nearest valid value over 3 px. A filled pixel is GLO-30 at 30 m, not GEM-15 at 15 m, and nothing in the tiles marks it: draw with these, measure with the gem-15 item COGs. Void-filling requires this notice: \"produced using Copernicus WorldDEM-30 \u00a9 DLR e.V. 2010-2014 and \u00a9 Airbus Defence and Space GmbH 2014-2018 provided under COPERNICUS by the European Union and ESA; all rights reserved\". The archive's own PMTiles metadata declares only `attribution`, set by the pipeline to \"\u00a9 Mapterhorn\", which is the tool credit and not the data attribution: a client must state the GEM-15 and Copernicus notices itself.",
+      "roles": [
+        "data",
+        "visual"
+      ],
+      "file:size": 129375429,
+      "file:checksum": "1220368c7805504e35e28a26cc746a0a4e370f11b4e60fd4f21c25b138bb19efc467",
+      "processing:software": {
+        "mapterhorn": "gem-15-source@86d8494"
+      },
+      "processing:lineage": "Built 2026-11-15 in 8 m 36 s on the forked Mapterhorn pipeline: band 1 of the GEM-15 DSM COG downloaded and extracted (source_gem15_download.py), nodata filled from Copernicus GLO-30 with an EGM2008-to-EGM96 correction and a 3 px feather (source_fill_nodata_glo30.py), bounds written (source_bounds.py), then the pipeline's own unmodified aggregation and downsampling stages, then bundled to one archive (bundle_area.py). Maximum zoom chosen by the pipeline's own get_smallest_overzoom, not set by hand."
+    },
+    "terrain-atlas": {
+      "href": "./mapterhorn-gem15-atlas.pmtiles",
+      "type": "application/vnd.pmtiles",
+      "title": "High Atlas terrain tiles, zoom 0 to 13 (terrarium)",
+      "description": "GEM-15 DSM over 1 one-degree cell in UTM zone 29N (wm8s31), covering the High Atlas around Toubkal. Terrarium-encoded 512 px lossless WebP tiles, zoom 0 to 13, 10,931 tiles, clustered, PMTiles specification v3. Read it as a MapLibre `raster-dem` source with `\"encoding\": \"terrarium\"`, `\"tileSize\": 512` and `\"maxzoom\": 13`. Decode a pixel with elevation = (R * 256 + G + B / 256) \u2212 32768. Zoom 13 is one level deeper than Mapterhorn publishes here today, because its production aggregation holds nothing finer than 30 m GLO-30 over this cell. This area is arid with almost no canopy, so a 15 m surface model against a 30 m one reads as terrain sharpening rather than as a canopy difference. Do not trust the PMTiles header bounds: the fork's bundle_area.py writes the whole world (-180 to 180, -85.05 to 85.05) into every archive it builds, which is a defect of this experimental build. The tiles actually present span -8.4375 to -5.625 degrees east and 29.535 to 34.307 degrees north, the tile-aligned aggregation blocks the pipeline built, and real GEM-15 elevation exists only over the one one-degree cell inside that footprint. Terrarium has no nodata value, so every other tile in the archive encodes as 0 m. GEM-15's own voids are filled from Copernicus GLO-30 before encoding, converted EGM2008 to EGM96 and feathered toward GEM-15's nearest valid value over 3 px. A filled pixel is GLO-30 at 30 m, not GEM-15 at 15 m, and nothing in the tiles marks it: draw with these, measure with the gem-15 item COGs. Void-filling requires this notice: \"produced using Copernicus WorldDEM-30 \u00a9 DLR e.V. 2010-2014 and \u00a9 Airbus Defence and Space GmbH 2014-2018 provided under COPERNICUS by the European Union and ESA; all rights reserved\". The archive's own PMTiles metadata declares only `attribution`, set by the pipeline to \"\u00a9 Mapterhorn\", which is the tool credit and not the data attribution: a client must state the GEM-15 and Copernicus notices itself.",
+      "roles": [
+        "data",
+        "visual"
+      ],
+      "file:size": 114564655,
+      "file:checksum": "12207765e051a4f97c9f143509875cdf3ace1f74f8308f171c3b38cc11565fb57825",
+      "processing:software": {
+        "mapterhorn": "gem-15-source@86d8494"
+      },
+      "processing:lineage": "Built 2026-11-15 in 10 m 18 s on the forked Mapterhorn pipeline: band 1 of the GEM-15 DSM COG downloaded and extracted (source_gem15_download.py), nodata filled from Copernicus GLO-30 with an EGM2008-to-EGM96 correction and a 3 px feather (source_fill_nodata_glo30.py), bounds written (source_bounds.py), then the pipeline's own unmodified aggregation and downsampling stages, then bundled to one archive (bundle_area.py). Maximum zoom chosen by the pipeline's own get_smallest_overzoom, not set by hand."
+    },
+    "style-atlas": {
+      "href": "./styles/atlas.json",
+      "type": "application/vnd.mapbox.style+json",
+      "title": "High Atlas: hypsometric tint with hillshade (default)",
+      "description": "MapLibre GL style over the High Atlas archive: absolute elevation tint under an Igor hillshade, source maxzoom 13, tileSize 512. The default style, and the view the thumbnail is rendered from.",
+      "roles": [
+        "style",
+        "default"
+      ]
+    },
+    "style-barcelona": {
+      "href": "./styles/barcelona.json",
+      "type": "application/vnd.mapbox.style+json",
+      "title": "Catalonia: hypsometric tint with hillshade",
+      "description": "MapLibre GL style over the Catalonia archive: absolute elevation tint under an Igor hillshade, source maxzoom 12, tileSize 512.",
+      "roles": [
+        "style"
+      ]
+    },
+    "style-cusco": {
+      "href": "./styles/cusco.json",
+      "type": "application/vnd.mapbox.style+json",
+      "title": "Cusco: hypsometric tint with hillshade",
+      "description": "MapLibre GL style over the Cusco archive: absolute elevation tint under an Igor hillshade, source maxzoom 13, tileSize 512.",
+      "roles": [
+        "style"
+      ]
+    },
+    "documentation": {
+      "href": "./llms.txt",
+      "type": "text/plain",
+      "title": "llms.txt",
+      "description": "Compact orientation file for language models.",
+      "roles": [
+        "documentation"
+      ]
+    },
+    "README": {
+      "href": "./README.md",
+      "type": "text/markdown",
+      "title": "Collection README",
+      "description": "The landing page for this collection.",
+      "roles": [
+        "metadata"
+      ]
+    },
+    "thumbnail": {
+      "href": "./thumbnail.png",
+      "type": "image/png",
+      "title": "Thumbnail",
+      "description": "An 800x533 preview of the High Atlas archive around Toubkal, decoded from the published terrarium tiles at zoom 10 (about 65 m/px) and rendered with the catalog's hypsometric ramp times a hillshade. Rendered from this collection's own tiles, not from the GEM-15 COGs.",
+      "roles": [
+        "thumbnail"
+      ],
+      "file:size": 342142,
+      "file:checksum": "1220cae38863643313210e45d9944a8f5f9bb53adac96399841786411be2377f3729",
+      "processing:lineage": "Rendered by tools/build_mapterhorn_thumbnail.py from the published mapterhorn-gem15-atlas.pmtiles archive over HTTP range requests."
+    }
+  },
+  "sci:doi": "10.31223/X55N75",
+  "sci:citation": "Batchu, V. V., Neumann, M., Li, T., Allen, B., Zhang, J., & Van Arsdale, C. (2026). GEM-15: Global surface and terrain elevation models (15 meters) from sub-meter optical stereo imagery. EarthArXiv [preprint]. https://eartharxiv.org/repository/view/16034/, doi:10.31223/X55N75",
+  "links": [
+    {
+      "rel": "root",
+      "href": "../catalog.json",
+      "type": "application/json"
+    },
+    {
+      "rel": "parent",
+      "href": "../catalog.json",
+      "type": "application/json"
+    },
+    {
+      "rel": "license",
+      "href": "https://creativecommons.org/licenses/by/4.0/",
+      "type": "text/html",
+      "title": "Creative Commons Attribution 4.0 International"
+    },
+    {
+      "rel": "derived_from",
+      "href": "../gem-15/collection.json",
+      "type": "application/json",
+      "title": "GEM-15, the elevation source these tiles were built from"
+    },
+    {
+      "rel": "via",
+      "href": "https://github.com/mapterhorn/mapterhorn/issues/368",
+      "type": "text/html",
+      "title": "Mapterhorn issue 368, which asked for this test"
+    },
+    {
+      "rel": "cite-as",
+      "href": "https://doi.org/10.31223/X55N75",
+      "type": "text/html",
+      "title": "GEM-15 preprint (EarthArXiv)"
+    },
+    {
+      "rel": "describedby",
+      "href": "./README.md",
+      "type": "text/markdown",
+      "title": "Collection README"
+    },
+    {
+      "rel": "agents",
+      "href": "./AGENTS.md",
+      "type": "text/markdown",
+      "title": "Collection agent guide"
+    },
+    {
+      "rel": "related",
+      "href": "https://github.com/cholmes/mapterhorn/tree/gem-15-source",
+      "type": "text/html",
+      "title": "The unmerged fork branch that built these archives"
+    },
+    {
+      "rel": "related",
+      "href": "https://github.com/cholmes/mapterhorn/blob/gem-15-source/NOTES.md",
+      "type": "text/markdown",
+      "title": "Experiment notes: pipeline mechanics, decisions and measurements"
+    },
+    {
+      "rel": "related",
+      "href": "https://github.com/mapterhorn/mapterhorn",
+      "type": "text/html",
+      "title": "The Mapterhorn project, whose BSD-3 pipeline built these tiles"
+    },
+    {
+      "rel": "related",
+      "href": "https://portolan-mirrors.github.io/gem-15-catalog/maplibre-terrain/mapterhorn-gem15.html",
+      "type": "text/html",
+      "title": "Interactive comparison of the three archives in MapLibre"
+    },
+    {
+      "rel": "pmtiles",
+      "href": "https://data.source.coop/portolan-mirrors/gem-15-catalog/mapterhorn-gem15/mapterhorn-gem15-barcelona.pmtiles",
+      "type": "application/vnd.pmtiles",
+      "title": "Catalonia terrain tiles (terrarium), zoom 0 to 12",
+      "pmtiles:layers": [
+        "dsm"
+      ]
+    },
+    {
+      "rel": "pmtiles",
+      "href": "https://data.source.coop/portolan-mirrors/gem-15-catalog/mapterhorn-gem15/mapterhorn-gem15-cusco.pmtiles",
+      "type": "application/vnd.pmtiles",
+      "title": "Cusco terrain tiles (terrarium), zoom 0 to 13",
+      "pmtiles:layers": [
+        "dsm"
+      ]
+    },
+    {
+      "rel": "pmtiles",
+      "href": "https://data.source.coop/portolan-mirrors/gem-15-catalog/mapterhorn-gem15/mapterhorn-gem15-atlas.pmtiles",
+      "type": "application/vnd.pmtiles",
+      "title": "High Atlas terrain tiles (terrarium), zoom 0 to 13",
+      "pmtiles:layers": [
+        "dsm"
+      ]
+    }
+  ],
+  "created": "2026-11-15T00:00:00Z",
+  "updated": "2026-11-15T00:00:00Z"
+}

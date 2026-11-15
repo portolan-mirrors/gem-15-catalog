@@ -23,6 +23,11 @@ no-deletion retention policy. We copy **no** COGs. This catalog adds:
    as an elevation layer (`raster-dem`) — hillshade, color-relief, 3D terrain.
 5. MapLibre **styles** and a thumbnail.
 
+A second collection, `mapterhorn-gem15`, is published here too. It contains
+three small terrain archives from an **experiment**. See "The
+mapterhorn-gem15 experiment" below for what it is and what it must never
+claim to be.
+
 Item links go **down into Google's catalog**: our `collection.json` carries
 297 absolute `child` links to Google's 10°×10° group catalogs at
 `https://storage.googleapis.com/climate-and-sustainability/gem-15/stac/gem-15/`,
@@ -46,8 +51,9 @@ which link their items. We publish no per-item JSON. (Generated links list:
 
 | Where | What |
 |---|---|
-| git (`catalog/`) | catalog.json, collection.json, README/AGENTS/llms.txt, styles/*.json |
-| `staging/publish/` (gitignored, uploaded by `tools/upload_data.py`) | items.parquet, overview COG, terrain PMTiles, thumbnail.png |
+| git (`catalog/`) | catalog.json, collection.json, README/AGENTS/llms.txt, styles/*.json, thumbnail.png |
+| `staging/publish/` (gitignored, uploaded by `tools/upload_data.py`) | items.parquet, overview COG, terrain PMTiles |
+| the bucket, written by hand | the three `mapterhorn-gem15` PMTiles archives, uploaded once by the cluster and never rebuilt (see below) |
 | Google's bucket (referenced only) | all COGs, all item JSON, group catalogs |
 
 Heavy builds run on the big server ("rails"), not laptops: see `RUNBOOK.md`.
@@ -68,10 +74,21 @@ gem-15/
 ├── terrain/
 │   ├── gem-15-dsm-terrarium.pmtiles          (staged; global)
 │   └── gem-15-dsm-terrarium-demo-barcelona.pmtiles  (staged; z0–14 demo)
+├── styles/
+│   ├── hypsometric.json    # default: color-relief tint + hillshade
+│   ├── hillshade.json      # hillshade only, neutral
+│   └── terrain-3d.json     # tint + hillshade + `terrain` + sky
+mapterhorn-gem15/
+├── collection.json         # id: mapterhorn-gem15
+├── README.md  AGENTS.md  llms.txt
+├── thumbnail.png           # in git, like gem-15's
+├── mapterhorn-gem15-barcelona.pmtiles  (uploaded by hand; see below)
+├── mapterhorn-gem15-cusco.pmtiles      (uploaded by hand)
+├── mapterhorn-gem15-atlas.pmtiles      (uploaded by hand)
 └── styles/
-    ├── hypsometric.json    # default: color-relief tint + hillshade
-    ├── hillshade.json      # hillshade only, neutral
-    └── terrain-3d.json     # tint + hillshade + `terrain` + sky
+    ├── atlas.json          # default: color-relief tint + hillshade
+    ├── barcelona.json      # same, maxzoom 12
+    └── cusco.json          # same, maxzoom 13
 ```
 
 `collection.json` assets (keys → roles):
@@ -88,6 +105,25 @@ gem-15/
 | `style-terrain-3d` | `./styles/terrain-3d.json` | `style` | `application/vnd.mapbox.style+json` |
 | `documentation` | `./llms.txt` | `documentation` | `text/plain` |
 | `README` | `./README.md` | `metadata` | `text/markdown` |
+
+`mapterhorn-gem15/collection.json` assets (keys → roles):
+
+| key | href | roles | type |
+|---|---|---|---|
+| `terrain-barcelona` | `./mapterhorn-gem15-barcelona.pmtiles` | `data`, `visual` | `application/vnd.pmtiles` |
+| `terrain-cusco` | `./mapterhorn-gem15-cusco.pmtiles` | `data`, `visual` | `application/vnd.pmtiles` |
+| `terrain-atlas` | `./mapterhorn-gem15-atlas.pmtiles` | `data`, `visual` | `application/vnd.pmtiles` |
+| `style-atlas` | `./styles/atlas.json` | `style`, `default` | `application/vnd.mapbox.style+json` |
+| `style-barcelona` | `./styles/barcelona.json` | `style` | `application/vnd.mapbox.style+json` |
+| `style-cusco` | `./styles/cusco.json` | `style` | `application/vnd.mapbox.style+json` |
+| `documentation` | `./llms.txt` | `documentation` | `text/plain` |
+| `README` | `./README.md` | `metadata` | `text/markdown` |
+| `thumbnail` | `./thumbnail.png` | `thumbnail` | `image/png` |
+
+The PMTiles take `data` as well as `visual`, unlike gem-15's terrain tiles.
+There they are a derivative of item COGs the catalog also describes; here they
+are the only data the collection has, and `visual` alone trips rashid's
+PTL-COL-006 ("collection refers to no data").
 
 Item-level data stays described via `item_assets` (`dsm`: 5 bands, `dtm`:
 1 band, Float32, nodata `"nan"`, per-UTM-zone) and the `renders` extension.
@@ -235,6 +271,84 @@ Record exact commands in `processing:lineage` on the asset and in AGENTS.md.
   README all now state the fill contract and carry the notice. The live demo
   archive still holds 0 m pits until it is rebuilt; the pages say so and need
   no further edit when it lands.
+
+## The mapterhorn-gem15 experiment
+
+A second collection, `mapterhorn-gem15`, published 2026-11-15. It answers
+[mapterhorn#368](https://github.com/mapterhorn/mapterhorn/issues/368), where a
+maintainer suggested running the Mapterhorn terrain pipeline over GEM-15
+tiffs. We did that on a fork — `cholmes/mapterhorn`, branch `gem-15-source`,
+archives built at commit `86d8494`, forked from upstream `main` at `2c4195d`
+— and published three
+small test archives. Catalonia covers 4 cells to maxzoom 12. Cusco and the
+High Atlas cover 1 cell each to maxzoom 13.
+
+**The framing is binding, not stylistic.** Nobody opened a pull request
+upstream and nothing was merged. The Mapterhorn project has not endorsed the
+result. Every surface that describes these archives says "built with the
+Mapterhorn pipeline (BSD-3)" and states the unmerged-fork status. Wording that
+reads as a Mapterhorn release is a defect, in prose and in metadata alike. The
+archives' own PMTiles metadata declares `attribution: "© Mapterhorn"` and
+nothing else, because the pipeline writes that into everything it builds, so
+every style and snippet here sets the full attribution on the source instead.
+
+**The source register for this collection**, matching the rule in AGENTS.md:
+
+1. `NOTES.md` on the fork branch — pipeline mechanics, the void-fill and
+   geoid decisions, the maxzoom analysis, and the exact licence texts. It is
+   the counterpart of `docs/research/gem15-paper-notes.md`.
+2. Measurements against the published archives. The PMTiles headers, the
+   archive metadata, the tile sizes and the probe elevations in
+   `catalog/mapterhorn-gem15/` were each re-read from the published bytes over
+   range requests on 2026-11-15, not copied from a build log.
+3. `catalog/gem-15/` for anything about GEM-15 itself. Do not re-derive
+   coverage, accuracy, band order or the masking rules here.
+
+**Naming.** Collection id `mapterhorn-gem15`: the tool first, the data second,
+which is what the collection is a statement about. Archive files are
+`mapterhorn-gem15-{area}.pmtiles` in a directory of the same name, so the
+published path repeats the stem; that was fixed when the cluster uploaded
+them and the metadata follows the bytes. Asset keys are `terrain-{area}` and
+`style-{area}`, and the style file names match the archive stems so the
+mapping needs no lookup.
+
+**Anything published from these archives takes on three obligations.**
+
+- The GEM-15 CC-BY-4.0 attribution "This dataset is produced by Google".
+- The Copernicus WorldDEM-30 Article 6(b) modified-data notice quoted in the
+  Known issues section above, required because the void fill puts
+  GLO-30-derived pixels in each archive.
+- BSD-3 credit for the pipeline, with the not-endorsed framing.
+
+**The bytes did not go through `tools/upload_data.py`.** The cluster that ran
+the build uploaded the three archives straight to
+`s3://portolan-mirrors/gem-15-catalog/mapterhorn-gem15/` through the
+`data.source.coop` gateway. The repository has no tool that stages or
+rebuilds them. That is a deliberate exception for a frozen
+experiment, and it has a cost worth stating: `tools/update_asset_facts.py`
+cannot refresh `file:size` or `file:checksum` for these assets, so those
+values were set by hand from the cluster's digests and verified against the
+`content-length` the gateway reports. A rebuild means re-measuring them by
+hand. The publish boundary itself is untouched: `catalog/` holds metadata,
+documentation, styles and one small PNG, as everywhere else.
+
+**Frozen.** These archives are a point measurement. They do not track
+upstream Mapterhorn and they will not be rebuilt for a new GEM-15 version.
+The collection says so in `description`, README and AGENTS.
+
+**A known defect of the build**: `bundle_area.py` on the fork writes global
+bounds into every PMTiles header, so all three archives claim the whole world.
+The real tile footprints were measured from each archive's root directory and
+are what `extent.spatial.bbox` carries. Documented as a known issue on both
+the collection and the fork's notes.
+
+**The thumbnail** is rendered by `tools/build_mapterhorn_thumbnail.py` from
+the published High Atlas archive over range requests, rather than from the
+GEM-15 COGs, so the catalog card shows the bytes this collection serves. It
+uses the same hypsometric ramp as the styles here and as gem-15's
+`hypsometric.json`, which keeps one meaning for a colour across the catalog.
+Changing the ramp in one place without the other makes the card lie about the
+default style.
 
 ## Example app
 
