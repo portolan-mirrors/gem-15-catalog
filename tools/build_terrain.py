@@ -467,6 +467,25 @@ VSICURL_ENV = {
     "GDAL_HTTP_TIMEOUT": "60",
     "GDAL_HTTP_MAX_RETRY": "4",
     "GDAL_HTTP_RETRY_DELAY": "1",
+    # 416 Range Not Satisfiable is in this list because GCS started
+    # answering it transiently for cells whose mosaic.tif serves ranges
+    # perfectly well the rest of the time. Four Patagonian cells hit it on
+    # one leg and two of them lost their tiles for that leg.
+    #
+    # GDAL does not retry 416 by default, and the message it raises
+    # ("Range downloading not supported by this server") reads like a
+    # permanent property of the server rather than a transient answer.
+    # Verified by probe, not assumed, against GDAL 3.10.3: a server that
+    # answers every ranged GET with 416 receives exactly 1 GET with the
+    # default settings and 4 with this list.
+    #
+    # Setting this option REPLACES GDAL's default list rather than adding
+    # to it, so the codes that already worked are restated here. Verified
+    # the same way: 429, 500, 502, 503 and 504 each get the same number of
+    # attempts with this list as with the default, and 404 still fails
+    # fast, which matters because a missing GLO-30 tile is an ordinary
+    # 404 and must stay cheap.
+    "GDAL_HTTP_RETRY_CODES": "429,500,502,503,504,416",
 }
 
 
@@ -1700,7 +1719,7 @@ def render_cell_block(
     width = (txmax - txmin + 1) * TILE_SIZE
     height = (tymax - tymin + 1) * TILE_SIZE
 
-    last_exc: Exception | None = None
+    last_error: str | None = None
     for attempt in range(1, CELL_READ_ATTEMPTS + 1):
         try:
             gdal.UseExceptions()
@@ -1730,12 +1749,35 @@ def render_cell_block(
                                         col0: col0 + TILE_SIZE].copy()
             return out
         except Exception as exc:  # noqa: BLE001 - any failure here is retryable
-            last_exc = exc
-            if attempt < CELL_READ_ATTEMPTS:
-                time.sleep(CELL_READ_BACKOFF_S * attempt)
+            # Keep the TEXT, never the exception object. Holding the
+            # exception holds its traceback, which holds this frame and
+            # every frame below it -- and those frames own the warp array
+            # and the void-fill working set, hundreds of MB to several GB
+            # per cell. The old code stored the exception and then slept
+            # inside this handler, pinning all of it for the whole
+            # backoff, across every cell retrying at once during a
+            # turbulence episode. Python drops `exc` when this clause
+            # ends, so everything below here runs with nothing pinned.
+            last_error = f"{type(exc).__name__}: {exc}"
+
+        # Deliberately outside the except clause: see above.
+        if attempt < CELL_READ_ATTEMPTS:
+            # Drop this URL's cached file properties before retrying.
+            # /vsicurl caches a file's size, and a transient bad answer
+            # can leave a wrong one cached, which would make every
+            # in-process retry fail identically no matter how healthy the
+            # object became. Partial, not VSICurlClearCache(), so one
+            # failing cell does not make the other workers re-fetch
+            # headers for every object they have open.
+            try:
+                gdal.VSICurlPartialClearCache(f"/vsicurl/{url}")
+            except Exception:  # noqa: BLE001 - a cache hint must never fail a build
+                pass
+            time.sleep(CELL_READ_BACKOFF_S * attempt)
     raise CellReadError(
-        f"{cell.cell_id} z{z}: failed after {CELL_READ_ATTEMPTS} attempt(s): {last_exc}"
-    ) from last_exc
+        f"{cell.cell_id} z{z}: failed after {CELL_READ_ATTEMPTS} "
+        f"attempt(s): {last_error}"
+    )
 
 
 def _fetch_cell_safe(cell, z: int, url: str, fill_voids: bool = True):
@@ -2690,8 +2732,10 @@ def log_build_summary(
         log("  PARTIAL: " + "; ".join(reasons) + ".")
         log("  This archive does not cover the requested scope. Its own "
             "minzoom/maxzoom metadata describes what it really contains, "
-            "so it is safe to publish as a fragment, but it is a fragment. "
-            "Rerun the same command to continue: it only redoes what is "
+            "so it is an honest fragment, but it is a fragment: no "
+            ".pmtiles is produced from it, and there is nothing to "
+            "promote. The working MBTiles is the banked progress. Rerun "
+            "the same command to continue: it only redoes what is "
             "missing.")
         return False
     log("  COMPLETE: every requested zoom level is present and every cell "
@@ -2974,20 +3018,27 @@ def main() -> int:
         log("--skip-convert set; leaving MBTiles in place")
         return exit_code()
 
+    if not complete:
+        # A partial archive is never worth converting. Nothing consumes
+        # one: the banked progress that matters is the working MBTiles,
+        # which the next resume reads directly, and the published
+        # .pmtiles is only ever made from a finished build. The
+        # conversion is not free either -- one run spent 11 hours at 2%
+        # CPU converting a fragment over NFS -- so this is time taken
+        # from the rebuild for an artifact that would be thrown away.
+        log(f"PARTIAL ARCHIVE: skipping `pmtiles convert` entirely. The "
+            f"working MBTiles at {mbtiles_path} holds the banked progress "
+            f"and is what the next run resumes from; keep it. No .pmtiles "
+            f"was written, so there is nothing to promote. Exit code "
+            f"{EXIT_PARTIAL}.")
+        return EXIT_PARTIAL
+
     args.output.parent.mkdir(parents=True, exist_ok=True)
     cmd = ["pmtiles", "convert", "--force", str(mbtiles_path), str(args.output)]
     log("running: " + " ".join(cmd))
     subprocess.run(cmd, check=True)
     log(f"wrote {args.output} ({args.output.stat().st_size / 1e6:.2f} MB)")
-    if not complete:
-        # Last line of the log, after the reassuring file size, because
-        # that file size is exactly what read as success last time.
-        log(f"PARTIAL ARCHIVE: {args.output} does not cover the requested "
-            f"scope (see the build summary above). Exit code "
-            f"{EXIT_PARTIAL}. It is a usable fragment and its metadata "
-            f"describes itself correctly; rerun the same command to "
-            f"finish it.")
-    elif not all_ok:
+    if not all_ok:
         log(f"VERIFY FAILED: the archive covers the requested scope, but at "
             f"least one sampled tile did not match a direct source read. "
             f"Exit code {EXIT_VERIFY_FAILED}.")

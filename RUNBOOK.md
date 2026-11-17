@@ -233,9 +233,17 @@ BUILD_STATUS=0
 python3 tools/build_terrain.py --band dsm --minzoom 0 --maxzoom 14 \
   --workers 64 --db-path "$SCRATCH" \
   --output "$SCRATCH/gem-15-dsm-terrarium.pmtiles" || BUILD_STATUS=$?
-if [ "$BUILD_STATUS" -ne 0 ]; then
-  echo "build_terrain.py exited $BUILD_STATUS; read its build summary above." >&2
-  echo "Promoting whatever it produced anyway, then failing the job." >&2
+
+# Exit 3 is PARTIAL. The script writes no .pmtiles in that case, on
+# purpose, so there is nothing to promote and nothing to verify. The
+# banked progress is the working MBTiles, which the next resume reads
+# directly -- so leave $SCRATCH alone and let the next leg continue from
+# it. Converting a fragment is pure waste: one leg spent 11 hours at 2%
+# CPU doing exactly that over NFS, for an artifact that was discarded.
+if [ "$BUILD_STATUS" -eq 3 ]; then
+  echo "PARTIAL leg. No .pmtiles produced, nothing promoted." >&2
+  echo "Working MBTiles kept at $SCRATCH for the next resume. NOT cleaned up." >&2
+  exit "$BUILD_STATUS"
 fi
 
 SRC="$SCRATCH/gem-15-dsm-terrarium.pmtiles"
@@ -253,14 +261,20 @@ if [ "$SRC_SHA" != "$DEST_SHA" ]; then
 fi
 echo "verified: $DEST matches $SRC (sha256 $DEST_SHA)"
 
-# Only reached once the checksum above has already matched: cleanup is a
-# consequence of verified success, not of this script exiting one way or
-# another (which is also why there is no `trap ... EXIT rm -rf` anywhere
-# in this script -- see below).
-rm -rf "$SCRATCH"
+# Only reached once the checksum above has already matched, AND only on a
+# complete build: cleanup is a consequence of verified success, not of
+# this script exiting one way or another (which is also why there is no
+# `trap ... EXIT rm -rf` anywhere in this script -- see below). A
+# --verify mismatch keeps the scratch too, because that is exactly the
+# state worth inspecting.
+if [ "$BUILD_STATUS" -eq 0 ]; then
+  rm -rf "$SCRATCH"
+else
+  echo "Exit $BUILD_STATUS: keeping $SCRATCH for inspection." >&2
+fi
 
 # The artifact is banked and verified. Now report the build's own verdict:
-# 0 complete, 1 a --verify mismatch, 3 a partial archive to resume.
+# 0 complete, 1 a --verify mismatch. (3, PARTIAL, already exited above.)
 exit "$BUILD_STATUS"
 EOF
 ```
