@@ -1772,45 +1772,71 @@ def render_cell_block(
     width = (txmax - txmin + 1) * TILE_SIZE
     height = (tymax - tymin + 1) * TILE_SIZE
 
+    def attempt_once() -> dict[tuple[int, int], np.ndarray]:
+        """One open, warp, read and slice pass over this cell.
+
+        A separate frame on purpose. When this raises, its frame unwinds
+        and everything it holds goes with it: the source dataset, the
+        VRT, the warped MEM dataset, the block array, and -- the part
+        that matters for the future -- any large local a later change
+        adds here, without anyone having to remember to release it.
+
+        That last point is why this is a nested function rather than a
+        list of names set back to None before the sleep. Both free the
+        same memory today. Only this one keeps freeing it after someone
+        adds another intermediate array.
+        """
+        gdal.UseExceptions()
+        apply_vsicurl_env()
+        src_ds = gdal.Open(f"/vsicurl/{url}")
+        if src_ds is None:
+            raise CellReadError(f"gdal.Open returned None for {url}")
+        band1 = gdal.Translate("", src_ds, format="VRT", bandList=[1])
+        warped = gdal.Warp(
+            "", band1, format="MEM", dstSRS="EPSG:3857",
+            outputBounds=(left, bottom, right, top),
+            width=width, height=height,
+            resampleAlg="bilinear", errorThreshold=0.0, srcNodata="nan", dstNodata="nan",
+            multithread=True,
+        )
+        if warped is None:
+            raise CellReadError(f"gdal.Warp returned None for {url}")
+        arr = warped.GetRasterBand(1).ReadAsArray().astype(np.float32)
+        if fill_voids:
+            arr = fill_voids_from_glo30(arr, cell, left, bottom, right, top, width, height)
+        out = {}
+        for tx in range(txmin, txmax + 1):
+            col0 = (tx - txmin) * TILE_SIZE
+            for ty in range(tymin, tymax + 1):
+                row0 = (ty - tymin) * TILE_SIZE
+                out[(tx, ty)] = arr[row0: row0 + TILE_SIZE,
+                                    col0: col0 + TILE_SIZE].copy()
+        return out
+
     last_error: str | None = None
     for attempt in range(1, CELL_READ_ATTEMPTS + 1):
         try:
-            gdal.UseExceptions()
-            apply_vsicurl_env()
-            src_ds = gdal.Open(f"/vsicurl/{url}")
-            if src_ds is None:
-                raise CellReadError(f"gdal.Open returned None for {url}")
-            band1 = gdal.Translate("", src_ds, format="VRT", bandList=[1])
-            warped = gdal.Warp(
-                "", band1, format="MEM", dstSRS="EPSG:3857",
-                outputBounds=(left, bottom, right, top),
-                width=width, height=height,
-                resampleAlg="bilinear", errorThreshold=0.0, srcNodata="nan", dstNodata="nan",
-                multithread=True,
-            )
-            if warped is None:
-                raise CellReadError(f"gdal.Warp returned None for {url}")
-            arr = warped.GetRasterBand(1).ReadAsArray().astype(np.float32)
-            if fill_voids:
-                arr = fill_voids_from_glo30(arr, cell, left, bottom, right, top, width, height)
-            out = {}
-            for tx in range(txmin, txmax + 1):
-                col0 = (tx - txmin) * TILE_SIZE
-                for ty in range(tymin, tymax + 1):
-                    row0 = (ty - tymin) * TILE_SIZE
-                    out[(tx, ty)] = arr[row0: row0 + TILE_SIZE,
-                                        col0: col0 + TILE_SIZE].copy()
-            return out
+            return attempt_once()
         except Exception as exc:  # noqa: BLE001 - any failure here is retryable
             # Keep the TEXT, never the exception object. Holding the
-            # exception holds its traceback, which holds this frame and
-            # every frame below it -- and those frames own the warp array
-            # and the void-fill working set, hundreds of MB to several GB
-            # per cell. The old code stored the exception and then slept
-            # inside this handler, pinning all of it for the whole
-            # backoff, across every cell retrying at once during a
-            # turbulence episode. Python drops `exc` when this clause
-            # ends, so everything below here runs with nothing pinned.
+            # exception holds its traceback, which holds the failed
+            # attempt's frame and every frame below it -- and those own
+            # the warp array and the void-fill working set, hundreds of
+            # MB to several GB per cell.
+            #
+            # Two things together make the backoff hold nothing. Python
+            # drops `exc` when this clause ends, which releases the
+            # traceback and with it attempt_once's frame; and the sleep
+            # sits outside the clause, so it runs after that. An earlier
+            # version stored the exception and slept inside the handler,
+            # which pinned the lot for the whole backoff across every
+            # cell retrying at once. A later version fixed the traceback
+            # but still ran the loop body in this frame, so the failed
+            # attempt's own dataset and block array -- about twice the
+            # cell block -- stayed bound until the next attempt rebound
+            # them. On the high-latitude cells, where a block reaches
+            # 4.6 GiB, a handful of cells retrying together was tens of
+            # GiB of burst on top of the window.
             last_error = f"{type(exc).__name__}: {exc}"
 
         # Deliberately outside the except clause: see above.
