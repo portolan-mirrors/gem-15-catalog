@@ -903,6 +903,45 @@ class MemorySampler:
     allocator-arena fingerprint, and a periodic ``malloc_trim`` probe
     whose RSS drop is a definitive verdict on allocator retention.
 
+    **Every field carries its unit in its name.** A field ending
+    ``_mib`` is mebibytes; one ending ``_tiles`` is a count of tiles;
+    anything else is named in full. An earlier version emitted bare
+    ``pending``, ``encoding`` and ``void_cache``, which are counts, next
+    to ``*_mib`` fields, and they were read as sizes. The fields are:
+
+    ``rss`` / ``rss_peak``
+        Process resident size. ``rss_peak`` appears instead off Linux,
+        where only a high-water mark is available.
+    ``hwm``
+        The process's own high-water RSS.
+    ``cg_current`` / ``cg_anon`` / ``cg_file`` / ``cg_shmem``
+        The cgroup's total charge and its split. ``cg_file`` climbing
+        while ``cg_anon`` stays flat means the working database's page
+        cache is being charged to the job, not the process's heap.
+    ``db`` / ``wal`` / ``shm``
+        The working database and its sidecars, on disk.
+    ``warp_cell_mib``
+        The block the cell just processed occupies. Rises with latitude.
+    ``warp_window_mib``
+        What every in-flight cell's block adds up to: the dominant
+        allocation, and the one no container holds, so it is computed
+        from the in-flight cells' own rects rather than measured. A cell
+        that is void-filling holds several multiples of its block at
+        once, so treat this as the floor of that term, not the ceiling.
+    ``pending_tiles`` / ``pending_mib``
+        Open shared boundary tiles and their real bytes.
+    ``encoding_tiles`` / ``encoding_mib``
+        Tiles queued for the encoder and the elevation arrays they pin.
+        Bounded by ``--encode-backlog-tiles``.
+    ``void_cache_tiles`` / ``void_cache_mib``
+        Void masks held for queued tiles, and their real bytes.
+    ``maps``
+        VM mapping count. A count that climbs with throughput and never
+        falls is the fingerprint of allocator arena growth.
+    ``malloc_trim_freed``
+        Every tenth sample. A large value means the allocator was
+        holding the memory, not live objects.
+
     Every field is optional and every read is guarded: a platform without
     ``/proc`` (a laptop smoke test) still gets RSS through
     ``resource.getrusage`` and simply omits the rest.
@@ -1286,6 +1325,20 @@ def cell_tile_rect(bbox, z: int) -> tuple[int, int, int, int]:
     ul = mercantile.tile(w, n, z)
     lr = mercantile.tile(e - mercantile.LL_EPSILON, s + mercantile.LL_EPSILON, z)
     return ul.x, lr.x, ul.y, lr.y
+
+
+def cell_block_bytes(rect: tuple[int, int, int, int]) -> int:
+    """Bytes in one cell's warped float32 block at this rect.
+
+    This is the single largest allocation in the build and the one the
+    memory log could not see: it lives in a fetch worker's frame, not in
+    any container the compositing thread holds. It grows sharply with
+    latitude, because Web Mercator packs more tile rows into a degree the
+    further from the equator you go -- about 0.55 GiB per cell at the
+    equator against 4.64 GiB at 83N.
+    """
+    x0, x1, y0, y1 = rect
+    return (x1 - x0 + 1) * (y1 - y0 + 1) * TILE_SIZE * TILE_SIZE * 4
 
 
 def rect_keys(rect: tuple[int, int, int, int]) -> np.ndarray:
@@ -2197,13 +2250,26 @@ def build_zoom_rewarp(
                     + (f", {failed_encodes} encode failure(s)"
                        if failed_encodes else ""))
             if sampler is not None and done_n % sampler_every == 0:
+                # The warp blocks the fetch workers hold are the dominant
+                # allocation and the one nothing else itemizes. They are
+                # not reachable from this thread, so they are reported
+                # from each in-flight cell's own rect: the window is
+                # topped up to `window` entries, so the cells that can be
+                # holding a block right now are the next `window`
+                # admitted cells that have not come back yet.
+                win_hi = min(done_n + window, len(admitted))
+                warp_window = sum(cell_block_bytes(index.rects[admitted[k]])
+                                  for k in range(done_n, win_hi))
                 sampler.sample(
                     f"z{z} cell {done_n}/{len(admitted)}",
                     written=written,
-                    pending=len(pending),
+                    warp_cell_mib=cell_block_bytes(index.rects[i]) / 2**20,
+                    warp_window_mib=warp_window / 2**20,
+                    pending_tiles=len(pending),
                     pending_mib=arrays_nbytes(e[1] for e in pending.values()) / 2**20,
-                    encoding=len(pending_encode),
-                    void_cache=len(void_cache),
+                    encoding_tiles=len(pending_encode),
+                    encoding_mib=len(pending_encode) * TILE_SIZE * TILE_SIZE * 4 / 2**20,
+                    void_cache_tiles=len(void_cache),
                     void_cache_mib=arrays_nbytes(void_cache.values()) / 2**20,
                 )
 
@@ -2237,7 +2303,8 @@ def build_zoom_rewarp(
             f"run; they are absent, not partial. Rerun to retry.")
     if sampler is not None:
         sampler.sample(f"z{z} end", written=written,
-                       pending=len(pending), pending_high=pending_high)
+                       pending_tiles=len(pending),
+                       pending_high_tiles=pending_high)
     return RewarpResult(
         written=written,
         already=n_done,
@@ -2794,9 +2861,12 @@ def main() -> int:
                    help="emit a `memlog` telemetry line every N cells at "
                         "--maxzoom (and every 100xN derived tiles): process "
                         "RSS, the cgroup's anon/file/shmem split, working "
-                        "database and WAL sizes, the real .nbytes of the "
+                        "database and WAL sizes, the in-flight warp blocks "
+                        "(the dominant allocation), the real .nbytes of the "
                         "in-flight containers, the VM mapping count, and a "
-                        "malloc_trim probe every 10th sample. 0 disables.")
+                        "malloc_trim probe every 10th sample. Every field "
+                        "names its own unit: `_mib` is mebibytes, `_tiles` "
+                        "is a count. 0 disables.")
     p.add_argument("--no-quantize", action="store_true",
                    help="disable per-zoom vertical quantization (for A/B comparison)")
     p.add_argument("--no-void-fill", action="store_true",
