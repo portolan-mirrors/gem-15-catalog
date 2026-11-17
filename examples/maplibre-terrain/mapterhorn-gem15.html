@@ -246,6 +246,27 @@
      difference does and does not mean, and that these archives are not a
      Mapterhorn release. Both are standing caveats, so neither one is a
      dismissible banner. */
+  .notes-wrap > summary,
+  .pane-label > summary {
+    cursor: pointer;
+    list-style: none;
+  }
+  .notes-wrap > summary::-webkit-details-marker,
+  .pane-label > summary::-webkit-details-marker { display: none; }
+  .notes-wrap > summary {
+    padding: 5px 12px;
+    border-top: 1px solid var(--line);
+    font-size: 11.5px;
+    color: var(--muted);
+  }
+  .notes-wrap > summary::before,
+  .pane-label > summary::before {
+    content: "\25b8";
+    display: inline-block;
+    width: 1em;
+  }
+  .notes-wrap[open] > summary::before,
+  .pane-label[open] > summary::before { content: "\25be"; }
   .notes {
     display: grid;
     grid-template-columns: 1fr auto auto;
@@ -299,9 +320,8 @@
     border: 1px solid var(--line);
     border-radius: 6px;
     box-shadow: 0 1px 6px rgba(0, 0, 0, 0.14);
-    pointer-events: none;
   }
-  .pane-label h2 { margin: 0; font-size: 13px; }
+  .pane-label h2 { display: inline; margin: 0; font-size: 13px; }
   .pane-label p { margin: 2px 0 0; font-size: 11px; color: var(--muted); }
   .pane-label .model {
     display: inline-block;
@@ -473,6 +493,8 @@
     </div>
   </div>
 
+  <details class="notes-wrap">
+  <summary>About this comparison</summary>
   <div class="notes">
     <p id="explainer"></p>
     <p class="note-box bands">
@@ -495,6 +517,7 @@
       issue 368</a>. They are not Mapterhorn releases.
     </p>
   </div>
+  </details>
 </header>
 
 <main class="panes" id="panes"></main>
@@ -1090,10 +1113,10 @@ for (const pane of PANES) {
   section.className = 'pane';
   section.innerHTML = `
     <div class="pane-map"></div>
-    <div class="pane-label">
-      <h2>${pane.name}<span class="model"></span></h2>
+    <details class="pane-label">
+      <summary><h2>${pane.name}<span class="model"></span></h2></summary>
       <p></p>
-    </div>
+    </details>
     <div class="pane-note" role="status"></div>
   `;
   panesHost.appendChild(section);
@@ -1129,6 +1152,20 @@ for (const pane of PANES) {
   // Attribution on every pane, because each pane draws a different source and
   // the credit has to sit with the thing it credits.
   map.addControl(new maplibregl.AttributionControl({ compact: true }), 'bottom-right');
+  // MapLibre opens a compact credit on a wide pane. Start it closed, so the
+  // reader opens it with the (i) button.
+  const closeCredit = () => {
+    const credit = section.querySelector('.maplibregl-ctrl-attrib');
+    if (!credit) return;
+    credit.classList.remove('maplibregl-compact-show');
+    credit.removeAttribute('open');
+  };
+  closeCredit();
+  // MapLibre re-opens it as the pane lays out and as the style loads, so close
+  // it again after each of those, until the reader has touched it.
+  let credited = false;
+  section.addEventListener('click', (e) => { if (e.target.closest('.maplibregl-ctrl-attrib')) credited = true; });
+  for (const ev of ['load', 'idle', 'resize', 'styledata']) map.on(ev, () => { if (!credited) closeCredit(); });
   if (pane.id === PANES[0].id) {
     // The compass earns its place now that the panes rotate, and it doubles as
     // the way back to north up and flat. One control drives all three panes,
@@ -1166,7 +1203,7 @@ for (const pane of PANES) {
   pane.map = map;
   pane.section = section;
   pane.labelModel = section.querySelector('.pane-label .model');
-  pane.labelBlurb = section.querySelector('.pane-label p');
+  pane.labelBlurb = section.querySelector('.pane-label > p');
   pane.note = note;
   pane.clearNote = () => { failures = 0; note.classList.remove('show'); };
   maps.push(map);
