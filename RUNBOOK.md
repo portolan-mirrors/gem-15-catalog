@@ -569,6 +569,94 @@ one:
    **Interim tilt if an unpatched build has to run**: set
    `--encode-workers` above `--workers` (the default makes them equal) so
    the encode pool outpaces the fetch pool and the queue cannot build.
+10. **A leg died on the wall clock and lost all its work.** The 12-worker
+    leg solved the memory problem (RSS mean 30.0 GiB, max 86.8, no
+    crisis) and then hit its 36-hour limit in the middle of deriving
+    z13. The job's exit trap had seconds, not the hour it needed to
+    salvage an 830 GB working database, so the leg's tiles were lost
+    (the master archive, 828.9 GB, was untouched). **Fixed**:
+    `--deadline-seconds` stops the build admitting new work before the
+    limit, lets what is in flight finish, commits, writes honest
+    metadata, reports PARTIAL and exits 3. See "Budgeting `--time`"
+    below -- the deadline only helps if `--time` was large enough to
+    reach a useful stopping point in the first place.
+11. **Five source objects are corrupt at the bucket.** Not transient:
+    see "Sources that are corrupt at the bucket" below. **Fixed**, as
+    far as this pipeline can: `--exclude-cells` / `--exclude-cells-file`
+    leave them out, report them as EXCLUDED rather than as failures, and
+    let the remaining scope report COMPLETE so the completeness audit
+    can pass.
+
+### Budgeting `--time`
+
+`--time` has to cover three stages, not one. The deadline flag stops a
+leg cleanly, but it cannot create time that was never requested.
+
+| stage | measured |
+|---|---|
+| z14 fetch + warp, full scope | ~30 h |
+| z13 derive | started at 87 tiles/s, decayed to 25.5 as the archive grew |
+| z13 -> z0 cascade, at the decayed floor | **projects ~151 h** |
+| copy + sha256 + promote of an ~830 GB working database | ~1 h |
+
+The derive cascade, not the fetch, is now the critical path, and at the
+decayed rate it busts even a 5-day limit. Treat 25.5 tiles/s as the
+planning rate until the threshold-trim experiment says otherwise, and
+pass `--deadline-seconds` computed from `--time` minus the promote tail:
+
+```bash
+#SBATCH --time=5-00:00:00
+...
+SECONDS_LEFT=$(( 5*24*3600 ))
+python3 tools/build_terrain.py ... \
+  --deadline-seconds "$SECONDS_LEFT" --deadline-margin-seconds 3600
+```
+
+`--deadline-margin-seconds` (default 3600) is the promote tail. The
+script also reads `SLURM_JOB_END_TIME` when the scheduler exports it,
+which needs no arithmetic, but it logs which source it used, so check
+that line rather than assuming: `--deadline-seconds` is the dependable
+path.
+
+### Sources that are corrupt at the bucket
+
+Five GEM-15 `mosaic.tif` objects are truncated upstream. The signature is
+identical on every leg: a byte range the COG's own header says exists
+answers **416 Range Not Satisfiable at the same offset every time**,
+followed by `TIFFReadEncodedTile() failed`. The 416 retry added for
+transient GCS errors does not help, because nothing is transient about a
+byte that is not there. All five failed again, identically, under the
+revision that added that retry.
+
+**All five are completely missing from the archive**, 15,213 z14 tiles in
+total. The cell-id convention is positive-by-default with `m` meaning
+minus (see `tools/_gem15_cells.py`), so these span two hemispheres rather
+than one regional batch:
+
+| cell | where | z14 tiles |
+|---|---|---|
+| `w60s43` | Kazakh steppe | 3,008 |
+| `w61s44` | Kazakh steppe | 2,990 |
+| `w65s44` | Kazakh steppe | 2,990 |
+| `w64s40` | Uzbekistan / Turkmenistan border | 2,867 |
+| `wm117s50` | BC / Alberta Rockies, Canada | 3,358 |
+
+Exclude them so a leg can finish:
+
+```bash
+python3 tools/build_terrain.py ... \
+  --exclude-cells w60s43,w61s44,w65s44,w64s40,wm117s50
+```
+
+**Know what exclusion means.** An excluded cell is treated as absent from
+the selection, not as a cell that failed. It contributes nothing, so its
+own degree ends up at 0 m by the same ocean convention a cell with no
+GLO-30 tile already gets, and a shared boundary tile it would have fed is
+finalized from its remaining neighbours alone. That is the honest reading
+of a source that does not exist, and it is the only way the rest of the
+scope can ever report COMPLETE -- but it is right *only* because these
+bytes are genuinely absent upstream. Never exclude a cell to get past a
+transient failure; that is how 0 m gets baked into real terrain.
 
 ### `--overview-mode`: average (new default) vs. rewarp (the original design)
 

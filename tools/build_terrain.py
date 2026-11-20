@@ -1139,6 +1139,75 @@ class MemorySampler:
         log("memlog " + " ".join(fields))
 
 
+class Deadline:
+    """A wall-clock budget that stops the build admitting new work.
+
+    A leg of the global build died on its 36-hour wall limit in the
+    middle of deriving z13, and the job's exit trap had seconds rather
+    than the hour it needed to salvage an 830 GB working database, so the
+    whole leg was lost. An external watchdog can only kill the process;
+    it cannot make the process stop cleanly. This can.
+
+    At the deadline, admission stops. Work already in flight finishes,
+    encodes drain, the commit scheduler flushes, the metadata is written
+    from built content, and the run reports PARTIAL and exits 3 -- the
+    same semantics as any other incomplete leg, reached on purpose
+    instead of by being killed.
+
+    The margin is what the job script still needs after the build
+    returns: the copy, the checksum and the promote. Budget `--time` for
+    the fetch stage AND the derive cascade AND that tail; see RUNBOOK.
+    """
+
+    def __init__(self, stop_at: float | None, source: str = "none"):
+        self.stop_at = stop_at
+        self.source = source
+        self.tripped = False
+
+    def expired(self) -> bool:
+        if self.stop_at is None or self.tripped:
+            return self.tripped
+        if time.time() >= self.stop_at:
+            self.tripped = True
+            log(f"DEADLINE reached ({self.source}): no new work will be "
+                f"admitted. Finishing what is in flight, then committing "
+                f"and reporting honestly.")
+        return self.tripped
+
+    def remaining_s(self) -> float | None:
+        if self.stop_at is None:
+            return None
+        return self.stop_at - time.time()
+
+
+def resolve_deadline(
+    deadline_seconds: float | None,
+    deadline_epoch: float | None,
+    margin_seconds: float,
+) -> Deadline:
+    """Pick the deadline from the most explicit source available.
+
+    ``--deadline-seconds`` is the dependable one: a job script can always
+    compute it from its own ``--time``. ``SLURM_JOB_END_TIME`` is read if
+    the scheduler happens to export it, because that needs no arithmetic
+    in the job script, but it is not relied on -- the source actually
+    used is logged either way, so the first run says which it got.
+    """
+    if deadline_epoch is not None:
+        return Deadline(deadline_epoch - margin_seconds, "--deadline-epoch")
+    if deadline_seconds is not None:
+        return Deadline(time.time() + deadline_seconds - margin_seconds,
+                        "--deadline-seconds")
+    raw = os.environ.get("SLURM_JOB_END_TIME")
+    if raw:
+        try:
+            return Deadline(float(raw) - margin_seconds, "$SLURM_JOB_END_TIME")
+        except ValueError:
+            log(f"WARNING: SLURM_JOB_END_TIME={raw!r} is not a number; "
+                f"ignoring it. Pass --deadline-seconds to set a deadline.")
+    return Deadline(None, "none")
+
+
 class WorkGauge:
     """A live count-and-bytes gauge for work held inside worker threads.
 
@@ -1964,7 +2033,8 @@ def _fetch_cell_safe(cell, z: int, url: str, fill_voids: bool = True):
 # bounded producer/consumer
 # --------------------------------------------------------------------------
 
-def run_bounded(items, submit, on_result, workers: int, window: int) -> None:
+def run_bounded(items, submit, on_result, workers: int, window: int,
+                should_stop=None) -> None:
     """Run `submit(item)` on a `workers`-thread pool, calling `on_result(item,
     future)` on the (single) calling thread as each result lands, never
     holding more than `window` futures in flight at once.
@@ -1984,6 +2054,12 @@ def run_bounded(items, submit, on_result, workers: int, window: int) -> None:
 
         def top_up() -> None:
             while len(in_flight) < window:
+                # `should_stop` is the graceful-deadline hook. Stopping
+                # admission here, rather than anywhere that abandons
+                # work, means everything already in flight still
+                # completes, commits and is reported.
+                if should_stop is not None and should_stop():
+                    return
                 try:
                     item = next(it)
                 except StopIteration:
@@ -2012,6 +2088,11 @@ class RewarpResult(NamedTuple):
     #: instead of summing the same cell once per zoom.
     failed_cell_ids: tuple[str, ...]
     cells_admitted: int
+    #: Admitted cells this run actually processed. Lower than
+    #: cells_admitted when the deadline stopped admission, which is the
+    #: difference between "this cell is done" and "this cell was never
+    #: reached".
+    cells_fetched: int
     unfinished_shared: int
     #: Tiles that composited correctly but could not be encoded. They are
     #: absent from the archive, never partial, so they make the run
@@ -2139,6 +2220,7 @@ def build_zoom_rewarp(
     encode_backlog: int = 0,
     sampler: MemorySampler | None = None,
     sampler_every_cells: int = 50,
+    deadline: Deadline | None = None,
 ) -> RewarpResult:
     """Build zoom z by warping every selected cell from source.
 
@@ -2166,7 +2248,7 @@ def build_zoom_rewarp(
 
     if not admitted:
         log(f"z{z}: nothing to do ({n_done} tile(s) already built)")
-        return RewarpResult(0, n_done, (), 0, 0)
+        return RewarpResult(0, n_done, (), 0, 0, 0)
 
     log(f"z{z}: {len(admitted)} cell(s) to fetch, up to {contributions} "
         f"cell-tile contribution(s) to build ({n_done} tile(s) already "
@@ -2385,7 +2467,8 @@ def build_zoom_rewarp(
                 )
 
         window = max(window_multiplier * workers, 1)
-        run_bounded(admitted, submit_fetch, on_result, workers, window)
+        run_bounded(admitted, submit_fetch, on_result, workers, window,
+                    should_stop=None if deadline is None else deadline.expired)
 
         # Drain whatever encodes are still outstanding, blocking this time.
         # Same per-tile degradation as drain_ready_encodes: one tile that
@@ -2407,11 +2490,16 @@ def build_zoom_rewarp(
     committer.flush()
     if pending or failed_cell_ids:
         log(f"  z{z}: {len(failed_cell_ids)} cell(s) failed and {len(pending)} "
-            f"shared boundary tile(s) are still waiting on one; neither is "
-            f"written. Rerun to retry -- it only redoes what is missing.")
+            f"shared boundary tile(s) are still waiting on a cell that did "
+            f"not complete; neither is written. Rerun to retry -- it only "
+            f"redoes what is missing.")
     if failed_encodes:
         log(f"  z{z}: {failed_encodes} tile(s) could not be encoded this "
             f"run; they are absent, not partial. Rerun to retry.")
+    if deadline is not None and deadline.tripped:
+        log(f"  z{z}: stopped admitting cells at the deadline with "
+            f"{done_n}/{len(admitted)} fetched. What was in flight "
+            f"completed and is committed.")
     if sampler is not None:
         sampler.sample(f"z{z} end", written=written,
                        pending_tiles=len(pending),
@@ -2421,6 +2509,7 @@ def build_zoom_rewarp(
         already=n_done,
         failed_cell_ids=tuple(failed_cell_ids),
         cells_admitted=len(admitted),
+        cells_fetched=done_n,
         unfinished_shared=len(pending),
         failed_encodes=failed_encodes,
     )
@@ -2460,6 +2549,7 @@ def derive_zoom_from_child(
     tile_format: str = "png",
     sampler: MemorySampler | None = None,
     sampler_every_tiles: int = 5000,
+    deadline: Deadline | None = None,
 ) -> tuple[int, int, int]:
     """Build zoom z purely from the already-built zoom child_z (= z+1) in
     the same MBTiles -- no source reads, no network. Returns (written,
@@ -2590,12 +2680,17 @@ def derive_zoom_from_child(
             yield unpack_xy(key)
 
     window = max(4 * workers, 1)
-    run_bounded(parents_in_order(), derive_one, on_result, workers, window)
+    run_bounded(parents_in_order(), derive_one, on_result, workers, window,
+                should_stop=None if deadline is None else deadline.expired)
 
     committer.flush()
     if failed_parents:
         log(f"  z{z}: {failed_parents} tile(s) could not be derived this "
             f"run; rerun to retry")
+    if deadline is not None and deadline.tripped:
+        log(f"  z{z}: stopped deriving at the deadline with "
+            f"{done_n}/{n_parents} tile(s) done. The rest is missing, not "
+            f"partial, and a rerun redoes exactly it.")
     return written, n_done, failed_parents
 
 
@@ -2842,6 +2937,45 @@ EXIT_VERIFY_FAILED = 1
 EXIT_PARTIAL = 3
 
 
+def load_exclusions(spec: str | None, path: Path | None) -> dict[str, str]:
+    """``{cell_id: reason}`` for cells to leave out of the build entirely.
+
+    Some GEM-15 source objects are truncated at the bucket: a range the
+    COG's own header says exists returns 416, at the same byte offset on
+    every attempt, from every leg. Five cells are in that state (see
+    RUNBOOK). No amount of retrying fixes a byte that is not there, and
+    while they count as failures no leg can ever report COMPLETE and no
+    completeness audit can ever pass.
+
+    **An excluded cell is treated as absent from the selection, not as a
+    cell that failed.** That is the honest reading of the upstream state
+    and it has a consequence worth being explicit about: the cell
+    contributes nothing, so its own area ends up at 0 m by the ocean
+    convention, and a shared boundary tile it would have contributed to
+    is finalized from its remaining neighbours alone. That is the same
+    treatment a cell with no GLO-30 tile over open ocean already gets.
+    It is right only because the data genuinely does not exist upstream;
+    never exclude a cell to get past a transient failure.
+
+    The file form is one cell id per line. Blank lines and ``#`` comments
+    are ignored, and text after an id becomes its reason.
+    """
+    out: dict[str, str] = {}
+    if path is not None:
+        for raw in path.read_text().splitlines():
+            line = raw.split("#", 1)[0].strip()
+            if not line:
+                continue
+            parts = line.split(None, 1)
+            out[parts[0]] = parts[1].strip() if len(parts) > 1 else "no reason given"
+    if spec:
+        for cid in spec.split(","):
+            cid = cid.strip()
+            if cid:
+                out.setdefault(cid, "no reason given")
+    return out
+
+
 def _fmt_zooms(zooms) -> str:
     """"z0-z14 (15 level(s))" for a contiguous run, otherwise an explicit
     list -- never a range that implies levels the archive does not have."""
@@ -2860,10 +2994,13 @@ def log_build_summary(
     *,
     requested_zooms,
     cells_requested: int,
+    cells_completed: int,
     failed_cells: int,
     unfinished_shared: int,
     failed_derived: int,
     failed_encodes: int = 0,
+    excluded: dict[str, str] | None = None,
+    deadline_hit: bool = False,
 ) -> bool:
     """Print what the archive actually holds against what was asked for.
     Returns True only if it covers the requested scope.
@@ -2881,7 +3018,6 @@ def log_build_summary(
     present = sorted(counts)
     requested = sorted(requested_zooms)
     missing = [z for z in requested if not counts.get(z)]
-    cells_completed = cells_requested - failed_cells
 
     log("build summary (measured from the archive, not from the request):")
     log(f"  cells:        {cells_completed}/{cells_requested} completed"
@@ -2891,16 +3027,29 @@ def log_build_summary(
     for z in present:
         log(f"    z{z}: {counts[z]} tile(s)")
     log(f"  total tiles:  {sum(counts.values())}")
+    if excluded:
+        # Reported, never counted as a failure, and deliberately not a
+        # reason for PARTIAL: an excluded cell is absent from the
+        # requested scope, so the remaining scope can still be complete.
+        log(f"  excluded:     {len(excluded)} cell(s) left out of this "
+            f"build on purpose, not failures:")
+        for cid in sorted(excluded):
+            log(f"    {cid}: {excluded[cid]}")
 
     reasons = []
+    if deadline_hit:
+        reasons.append("the wall-clock deadline stopped it admitting work")
+    if cells_completed < cells_requested and not failed_cells:
+        reasons.append(f"{cells_requested - cells_completed} cell(s) were "
+                       f"never reached")
     if failed_cells:
         reasons.append(f"{failed_cells} of {cells_requested} cell(s) failed")
     if missing:
         reasons.append(f"no tiles at all at {_fmt_zooms(missing)}")
     if unfinished_shared:
         reasons.append(
-            f"{unfinished_shared} shared boundary tile(s) still waiting on a "
-            f"failed neighbouring cell"
+            f"{unfinished_shared} shared boundary tile(s) still waiting on "
+            f"a neighbouring cell that did not complete this run"
         )
     if failed_encodes:
         reasons.append(f"{failed_encodes} tile(s) failed to encode")
@@ -2968,6 +3117,37 @@ def main() -> int:
                         "(7.6 GiB pinned) at 24 workers in dense terrain. "
                         "Each queued tile pins 320 KiB, so the cap is also "
                         "the memory this stage can hold.")
+    p.add_argument("--deadline-seconds", type=float, default=None, metavar="S",
+                   help="stop admitting new work S seconds from now, then "
+                        "finish what is in flight, commit, report PARTIAL and "
+                        "exit 3. A job script should compute this from its "
+                        "own --time. Without it the build runs until it "
+                        "finishes or the scheduler kills it, which on an "
+                        "830 GB working database loses the whole leg.")
+    p.add_argument("--deadline-epoch", type=float, default=None, metavar="T",
+                   help="same, as an absolute unix timestamp. Overrides "
+                        "--deadline-seconds. If neither is given, "
+                        "SLURM_JOB_END_TIME is used when the scheduler "
+                        "exports it; the source actually used is logged.")
+    p.add_argument("--deadline-margin-seconds", type=float, default=3600.0,
+                   metavar="S",
+                   help="how long before the deadline to stop admitting "
+                        "(default 3600). This is the time the job script "
+                        "still needs after the build returns: the copy, the "
+                        "checksum and the promote.")
+    p.add_argument("--exclude-cells", type=str, default=None,
+                   help="comma-separated cell ids to leave out of the build "
+                        "entirely, for sources that are corrupt at the "
+                        "bucket. Reported as EXCLUDED, not as failures, and "
+                        "they do not stop the remaining scope reporting "
+                        "COMPLETE. Read load_exclusions first: an excluded "
+                        "cell contributes nothing, so its area becomes 0 m "
+                        "and its neighbours' shared boundary tiles finalize "
+                        "without it.")
+    p.add_argument("--exclude-cells-file", type=Path, default=None,
+                   help="the same list from a file: one cell id per line, "
+                        "'#' comments ignored, any text after the id kept as "
+                        "that cell's reason.")
     p.add_argument("--memory-log", type=int, default=0, metavar="N",
                    help="emit a `memlog` telemetry line every N cells at "
                         "--maxzoom (and every 100xN derived tiles): process "
@@ -3025,10 +3205,42 @@ def main() -> int:
     cells = filter_cells(cells, cell_ids=cell_ids, bbox=bbox)
     if not cells:
         sys.exit("no cells matched --cells/--bbox")
+
+    excluded = load_exclusions(args.exclude_cells, args.exclude_cells_file)
+    if excluded:
+        present = {c.cell_id for c in cells}
+        unknown = sorted(set(excluded) - present)
+        if unknown:
+            # A typo in an exclusion list silently builds a cell you
+            # meant to skip, so say so rather than ignoring it.
+            log(f"WARNING: {len(unknown)} excluded cell id(s) match no "
+                f"selected cell and will have no effect: "
+                f"{', '.join(unknown)}")
+        dropped = sorted(present & set(excluded))
+        cells = [c for c in cells if c.cell_id not in excluded]
+        excluded = {cid: excluded[cid] for cid in dropped}
+        if not cells:
+            sys.exit("every selected cell was excluded; nothing to build")
+        log(f"excluding {len(dropped)} cell(s) from the build: "
+            + ", ".join(f"{cid} ({excluded[cid]})" for cid in dropped))
+        log("  An excluded cell contributes nothing: its area ends up at "
+            "0 m by the ocean convention, and shared boundary tiles it "
+            "would have fed are finalized from its neighbours alone. "
+            "Correct only because the source bytes do not exist upstream.")
     log(f"{len(cells)} cell(s) selected, band={args.band}, "
         f"overview-mode={args.overview_mode}, quantize={quantize}, "
         f"fill_voids={fill_voids}, tile_format={args.tile_format}, "
         f"z{args.minzoom}-z{args.maxzoom}")
+
+    deadline = resolve_deadline(args.deadline_seconds, args.deadline_epoch,
+                                args.deadline_margin_seconds)
+    if deadline.stop_at is None:
+        log("no wall-clock deadline set; pass --deadline-seconds so an "
+            "interrupted leg stops cleanly instead of being killed")
+    else:
+        log(f"deadline from {deadline.source}: stops admitting work in "
+            f"{deadline.remaining_s() / 3600:.2f} h "
+            f"(margin {args.deadline_margin_seconds / 3600:.2f} h)")
 
     if args.mbtiles:
         mbtiles_path = args.mbtiles
@@ -3122,10 +3334,12 @@ def main() -> int:
         fill_voids=fill_voids, tile_format=args.tile_format,
         encode_backlog=encode_backlog,
         sampler=sampler, sampler_every_cells=args.memory_log or 50,
+        deadline=deadline,
     )
     derive_kw = dict(
         tile_format=args.tile_format, sampler=sampler,
         sampler_every_tiles=(args.memory_log or 50) * 100,
+        deadline=deadline,
     )
 
     if args.overview_mode == "rewarp":
@@ -3153,6 +3367,10 @@ def main() -> int:
         maybe_verify(args.maxzoom, bool(r.written or r.already), is_rewarped=True)
 
         for z in range(args.maxzoom - 1, args.minzoom - 1, -1):
+            if deadline.expired():
+                log(f"deadline reached; not starting z{z}. The zooms "
+                    f"already built are committed and honest.")
+                break
             written, already, failed_derived = derive_zoom_from_child(
                 z, z + 1, conn, mbtiles_path, args.workers, args.force, quantize, committer,
                 **derive_kw,
@@ -3170,10 +3388,14 @@ def main() -> int:
         conn,
         requested_zooms=range(args.minzoom, args.maxzoom + 1),
         cells_requested=len(cells),
+        cells_completed=(len(cells) - r.cells_admitted
+                         + r.cells_fetched - len(failed_cells)),
         failed_cells=len(failed_cells),
         unfinished_shared=total_unfinished_shared,
         failed_derived=total_failed_derived,
         failed_encodes=total_failed_encodes,
+        excluded=excluded,
+        deadline_hit=deadline.tripped,
     )
     if sampler is not None:
         sampler.sample("end")
