@@ -493,7 +493,7 @@
     </div>
   </div>
 
-  <details class="notes-wrap" open>
+  <details class="notes-wrap">
   <summary>About this comparison</summary>
   <div class="notes">
     <p id="explainer"></p>
@@ -1113,7 +1113,7 @@ for (const pane of PANES) {
   section.className = 'pane';
   section.innerHTML = `
     <div class="pane-map"></div>
-    <details class="pane-label" open>
+    <details class="pane-label">
       <summary><h2>${pane.name}<span class="model"></span></h2></summary>
       <p></p>
     </details>
@@ -1165,7 +1165,7 @@ for (const pane of PANES) {
   // it again after each of those, until the reader has touched it.
   let credited = false;
   section.addEventListener('click', (e) => { if (e.target.closest('.maplibregl-ctrl-attrib')) credited = true; });
-  for (const ev of ['load', 'idle', 'resize', 'styledata']) map.on(ev, () => { if (!credited) closeCredit(); });
+  for (const ev of ['load', 'idle', 'resize', 'styledata', 'sourcedata', 'data']) map.on(ev, () => { if (!credited) closeCredit(); });
   if (pane.id === PANES[0].id) {
     // The compass earns its place now that the panes rotate, and it doubles as
     // the way back to north up and flat. One control drives all three panes,
