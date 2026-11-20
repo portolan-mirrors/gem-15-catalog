@@ -1818,21 +1818,31 @@ def read_tile_and_mask(path: Path, z: int, x: int, y: int):
     """
     conn = get_read_connection(path)
     tile_row = ((1 << z) - 1) - y
+    # One statement, not two. The derive cascade calls this once per
+    # child tile -- 40.8M times for z13 alone -- and it used to issue a
+    # separate point query for the tile and for its void mask. The outer
+    # join fetches both in a single statement, which halves the
+    # per-child statement and query-setup cost on what is now the
+    # build's critical path. It does not reduce the I/O: both tables are
+    # still searched by their own index (confirmed with EXPLAIN QUERY
+    # PLAN), so this is CPU overhead, not seeks. A missing tile still
+    # yields no row at all, and a missing mask still yields NULL and
+    # falls through to the approximation below.
     row = conn.execute(
-        "SELECT tile_data FROM tiles WHERE zoom_level=? AND tile_column=? AND tile_row=?",
+        "SELECT t.tile_data, m.mask FROM tiles t "
+        "LEFT JOIN void_masks m ON m.zoom_level = t.zoom_level "
+        "AND m.tile_column = t.tile_column AND m.tile_row = t.tile_row "
+        "WHERE t.zoom_level=? AND t.tile_column=? AND t.tile_row=?",
         (z, x, tile_row),
     ).fetchone()
     if row is None:
         return None
-    png = Image.open(io.BytesIO(row[0])).convert("RGB")
+    tile_data, mask_data = row
+    png = Image.open(io.BytesIO(tile_data)).convert("RGB")
     elev = decode_terrarium(np.array(png)).astype(np.float32)
 
-    mask_row = conn.execute(
-        "SELECT mask FROM void_masks WHERE zoom_level=? AND tile_column=? AND tile_row=?",
-        (z, x, tile_row),
-    ).fetchone()
-    if mask_row is not None:
-        void = unpack_mask(mask_row[0])
+    if mask_data is not None:
+        void = unpack_mask(mask_data)
     else:
         # A tile written before void_masks existed. Approximate: treat
         # exact 0 m as void. Slightly wrong at a real sea-level pixel, but
@@ -2614,9 +2624,16 @@ def derive_zoom_from_child(
         px, py = parent
         super_elev = np.zeros((2 * TILE_SIZE, 2 * TILE_SIZE), dtype=np.float32)
         super_void = np.ones((2 * TILE_SIZE, 2 * TILE_SIZE), dtype=bool)
-        # Child placement, standard XYZ 2x2 pyramid relationship.
+        # Child placement, standard XYZ 2x2 pyramid relationship. The
+        # four are visited a column at a time (both dy for dx=0, then
+        # both for dx=1) rather than a row at a time, because the tiles
+        # index is ordered (zoom_level, tile_column, tile_row): two
+        # lookups sharing a column prefix land on the same index leaf,
+        # where alternating columns walks away and back. Each tuple
+        # carries its own placement offsets, so the order of this list
+        # has no effect on the result.
         for dx, dy, row_off, col_off in (
-            (0, 0, 0, 0), (1, 0, 0, TILE_SIZE), (0, 1, TILE_SIZE, 0), (1, 1, TILE_SIZE, TILE_SIZE)
+            (0, 0, 0, 0), (0, 1, TILE_SIZE, 0), (1, 0, 0, TILE_SIZE), (1, 1, TILE_SIZE, TILE_SIZE)
         ):
             child = read_child(2 * px + dx, 2 * py + dy)
             if child is None:
