@@ -832,6 +832,24 @@ def fill_voids_from_glo30(
     if not void.any():
         return arr  # the cheap check: skip the GLO-30 fetch entirely
 
+    FILL_GAUGE.enter(arr.nbytes)
+    try:
+        return _fill_voids_from_glo30(arr, void, cell, left, bottom, right,
+                                      top, width, height)
+    finally:
+        FILL_GAUGE.leave(arr.nbytes)
+
+
+def _fill_voids_from_glo30(
+    arr: np.ndarray,
+    void: np.ndarray,
+    cell,
+    left: float, bottom: float, right: float, top: float,
+    width: int, height: int,
+) -> np.ndarray:
+    """The body of fill_voids_from_glo30, in its own frame so the gauge
+    around it is exception-safe and so this working set is released the
+    moment it returns."""
     from osgeo import gdal
 
     url = glo30_url(cell.bbox[0], cell.bbox[1])
@@ -922,12 +940,18 @@ class MemorySampler:
         The working database and its sidecars, on disk.
     ``warp_cell_mib``
         The block the cell just processed occupies. Rises with latitude.
-    ``warp_window_mib``
-        What every in-flight cell's block adds up to: the dominant
-        allocation, and the one no container holds, so it is computed
-        from the in-flight cells' own rects rather than measured. A cell
-        that is void-filling holds several multiples of its block at
-        once, so treat this as the floor of that term, not the ceiling.
+    ``warp_exec_cells`` / ``warp_exec_mib``
+        Cells inside ``render_cell_block`` right now and the blocks they
+        are reading, reported live by the workers themselves. The
+        dominant allocation in the build. Each of those cells holds
+        roughly three times the block it reports, because it is slicing
+        tile copies out of it while the GDAL dataset behind it is still
+        open, so read this as the base term and not the total.
+    ``fill_active_cells`` / ``fill_active_mib``
+        Cells inside the GLO-30 void fill right now, as base block
+        bytes. The fill holds about seven of those at its peak. This
+        gauge exists so that multiplier can be measured against the
+        residual in RSS rather than inferred from reading the code.
     ``pending_tiles`` / ``pending_mib``
         Open shared boundary tiles and their real bytes.
     ``encoding_tiles`` / ``encoding_mib``
@@ -1113,6 +1137,55 @@ class MemorySampler:
                     f"malloc_trim_freed={(before - after) / 2**20:.0f}MiB")
 
         log("memlog " + " ".join(fields))
+
+
+class WorkGauge:
+    """A live count-and-bytes gauge for work held inside worker threads.
+
+    The compositing thread cannot reach a fetch worker's locals, so the
+    largest allocations in this build -- a cell's warped block, and the
+    several multiples of it a void-fill holds at once -- were invisible
+    to the memory log. An earlier attempt reported them from the
+    admission list instead, summing the next `window` cells' rect sizes;
+    that is a forward-looking budget, not live state, and because
+    neighbouring cells are nearly the same size it printed almost flat.
+    These gauges are the real thing: the workers themselves report
+    entering and leaving.
+    """
+
+    def __init__(self, name: str):
+        self.name = name
+        self._lock = threading.Lock()
+        self._cells = 0
+        self._nbytes = 0
+
+    def enter(self, nbytes: int) -> None:
+        with self._lock:
+            self._cells += 1
+            self._nbytes += nbytes
+
+    def leave(self, nbytes: int) -> None:
+        with self._lock:
+            self._cells -= 1
+            self._nbytes -= nbytes
+
+    def snapshot(self) -> tuple[int, int]:
+        with self._lock:
+            return self._cells, self._nbytes
+
+
+#: Cells inside render_cell_block right now. Each holds its warped block
+#: plus the tile copies it is slicing out of it, so roughly 3x the block
+#: reported here, and more while it is void-filling (see FILL_GAUGE).
+WARP_GAUGE = WorkGauge("warp")
+
+#: Cells inside fill_voids_from_glo30 right now, reported as the base
+#: block size. The fill holds about 7 of those at its peak -- GEM-15's
+#: block, the GDAL MEM dataset behind it, the GLO-30 warp and its own MEM
+#: dataset, three boolean masks, the blended result and the output copy.
+#: Correlating this gauge against the residual in RSS is what turns that
+#: multiplier from a code reading into a measurement.
+FILL_GAUGE = WorkGauge("fill")
 
 
 def arrays_nbytes(values) -> int:
@@ -1767,6 +1840,7 @@ def render_cell_block(
     txmin, txmax, tymin, tymax = cell_tile_rect(cell.bbox, z)
     if txmin > txmax or tymin > tymax:
         return {}
+    block_bytes = cell_block_bytes((txmin, txmax, tymin, tymax))
     left, _, _, top = mercantile.xy_bounds(txmin, tymin, z)
     _, bottom, right, _ = mercantile.xy_bounds(txmax, tymax, z)
     width = (txmax - txmin + 1) * TILE_SIZE
@@ -1812,6 +1886,17 @@ def render_cell_block(
                 out[(tx, ty)] = arr[row0: row0 + TILE_SIZE,
                                     col0: col0 + TILE_SIZE].copy()
         return out
+
+    WARP_GAUGE.enter(block_bytes)
+    try:
+        return _read_with_retries(cell, z, url, attempt_once)
+    finally:
+        WARP_GAUGE.leave(block_bytes)
+
+
+def _read_with_retries(cell, z: int, url: str, attempt_once):
+    """Run `attempt_once` with in-process retry and backoff."""
+    from osgeo import gdal
 
     last_error: str | None = None
     for attempt in range(1, CELL_READ_ATTEMPTS + 1):
@@ -2276,21 +2361,21 @@ def build_zoom_rewarp(
                     + (f", {failed_encodes} encode failure(s)"
                        if failed_encodes else ""))
             if sampler is not None and done_n % sampler_every == 0:
-                # The warp blocks the fetch workers hold are the dominant
-                # allocation and the one nothing else itemizes. They are
-                # not reachable from this thread, so they are reported
-                # from each in-flight cell's own rect: the window is
-                # topped up to `window` entries, so the cells that can be
-                # holding a block right now are the next `window`
-                # admitted cells that have not come back yet.
-                win_hi = min(done_n + window, len(admitted))
-                warp_window = sum(cell_block_bytes(index.rects[admitted[k]])
-                                  for k in range(done_n, win_hi))
+                # Live, from the workers themselves. The superseded
+                # version summed the next `window` admitted cells' rects,
+                # which is a budget rather than a reading and printed
+                # almost flat because neighbouring cells are nearly the
+                # same size.
+                warp_cells, warp_bytes = WARP_GAUGE.snapshot()
+                fill_cells, fill_bytes = FILL_GAUGE.snapshot()
                 sampler.sample(
                     f"z{z} cell {done_n}/{len(admitted)}",
                     written=written,
                     warp_cell_mib=cell_block_bytes(index.rects[i]) / 2**20,
-                    warp_window_mib=warp_window / 2**20,
+                    warp_exec_cells=warp_cells,
+                    warp_exec_mib=warp_bytes / 2**20,
+                    fill_active_cells=fill_cells,
+                    fill_active_mib=fill_bytes / 2**20,
                     pending_tiles=len(pending),
                     pending_mib=arrays_nbytes(e[1] for e in pending.values()) / 2**20,
                     encoding_tiles=len(pending_encode),
